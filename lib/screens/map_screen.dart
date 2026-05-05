@@ -245,6 +245,71 @@ void _fermerDialogPoi() {
   }
 }
 
+void _onAjouterPoiClicked() {
+  final position = _currentPosition;
+  if (position == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Localisation indisponible')),
+    );
+    return;
+  }
+
+  final textController = TextEditingController();
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Nouvelle anecdote'),
+      content: TextField(
+        controller: textController,
+        decoration: const InputDecoration(
+          hintText: 'Message de l\'anecdote',
+        ),
+        maxLines: 4,
+        autofocus: true,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            final message = textController.text.trim();
+            if (message.isEmpty) return;
+            Navigator.pop(context);
+
+            final uid = FirebaseAuth.instance.currentUser?.uid;
+            if (uid == null) return;
+
+            try {
+              await _poiRepository.ajouterPoi(
+                latitude: position.latitude,
+                longitude: position.longitude,
+                message: message,
+                creatorUid: uid,
+              );
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Brouillon enregistré')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    ),
+  );
+}
+
   Future<void> _signOut() async {
     _ttsService.arreter();
     await FirebaseAuth.instance.signOut();
@@ -292,6 +357,114 @@ List<CircleMarker> _buildCercles() {
       .toList();
 }
 
+void _onCarteTappee(LatLng tapLatLng) {
+  // Chercher le POI INITIATED le plus proche du tap
+  const double seuilMetres = 30.0;
+
+  PointInteret? poiTouche;
+  double distanceMin = double.infinity;
+
+  for (final poi in _pointsInteret) {
+    if (poi.status != PoiStatus.initiated) continue;
+
+    final dist = _distance.as(LengthUnit.Meter, tapLatLng, poi.position);
+    if (dist < seuilMetres && dist < distanceMin) {
+      distanceMin = dist;
+      poiTouche = poi;
+    }
+  }
+
+  if (poiTouche != null) {
+    _afficherDialogEditionPoi(poiTouche);
+  }
+}
+
+void _afficherDialogEditionPoi(PointInteret poi) {
+  final textController = TextEditingController(text: poi.message);
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Modifier votre brouillon'),
+      content: TextField(
+        controller: textController,
+        decoration: const InputDecoration(
+          hintText: 'Message de l\'anecdote',
+        ),
+        maxLines: 4,
+      ),
+      actions: [
+        // Annuler
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        // Proposer à la modération
+        TextButton(
+          onPressed: () async {
+            final message = textController.text.trim();
+            if (message.isEmpty) return;
+            Navigator.pop(context);
+
+            try {
+              await _poiRepository.mettreAJourPoi(
+                poi.id,
+                {
+                  'message': message,
+                  'status': 'proposed',
+                },
+              );
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('POI proposé à la modération !')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          child: const Text('Proposer à la modération',
+              style: TextStyle(color: Colors.orange)),
+        ),
+        // Enregistrer
+        ElevatedButton(
+          onPressed: () async {
+            final message = textController.text.trim();
+            if (message.isEmpty) return;
+            Navigator.pop(context);
+
+            try {
+              await _poiRepository.mettreAJourPoi(
+                poi.id,
+                {'message': message},
+              );
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Brouillon mis à jour')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          child: const Text('Enregistrer'),
+        ),
+      ],
+    ),
+  );
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -305,6 +478,7 @@ List<CircleMarker> _buildCercles() {
                       options: MapOptions(
                         initialCenter: _currentPosition!,
                         initialZoom: 16.0,
+                        onTap: (tapPosition, latLng) => _onCarteTappee(latLng),
                       ),
                       children: [
                         TileLayer(
@@ -333,42 +507,61 @@ List<CircleMarker> _buildCercles() {
                     )
                   : const Center(child: CircularProgressIndicator()),
             ),
+            
             // Barre du bas
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _chargerPois,
-                      child: const Text('Réafficher',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {},
-                      child: const Text('Parcourir',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _signOut,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Déconnexion',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                ],
-              ),
+Container(
+  color: Colors.white,
+  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+  child: Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _chargerPois,
+              child: const Text('Réafficher',
+                  style: TextStyle(fontSize: 12)),
             ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () {},
+              child: const Text('Parcourir',
+                  style: TextStyle(fontSize: 12)),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _signOut,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Déconnexion',
+                  style: TextStyle(fontSize: 12)),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: _onAjouterPoiClicked,
+          icon: const Icon(Icons.add_location_alt),
+          label: const Text('Ajouter Anecdote'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple,
+            foregroundColor: Colors.white,
+          ),
+        ),
+      ),
+    ],
+  ),
+),
           ],
         ),
       ),
