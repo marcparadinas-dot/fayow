@@ -51,6 +51,22 @@ Future<Set<String>> chargerPoisLus(String uid) async {
   }
 }
 
+// Charger tous les POIs proposés (pour le modérateur)
+Future<List<PointInteret>> chargerTousPoisProposed() async {
+  try {
+    final snapshot = await _db
+        .collection('pois')
+        .where('status', isEqualTo: 'proposed')
+        .get();
+    return snapshot.docs
+        .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
+        .toList();
+  } catch (e) {
+    print('Erreur chargerTousPoisProposed : $e');
+    return [];
+  }
+}
+
   // Mettre à jour un POI
   Future<void> mettreAJourPoi(
       String poiId, Map<String, dynamic> data) async {

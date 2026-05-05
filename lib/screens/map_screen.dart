@@ -1,3 +1,5 @@
+import 'parcourir_screen.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -9,6 +11,7 @@ import '../repository/poi_repository.dart';
 import '../services/tts_service.dart';
 import '../screens/auth_screen.dart';
 import '../services/foreground_service.dart';
+import '../services/auth_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -27,106 +30,121 @@ class _MapScreenState extends State<MapScreen> {
   bool _locationReady = false;
   List<PointInteret> _pointsInteret = [];
   Set<String> _poisLusIds = {};
-Set<String> _poisValidesDeclenches = {};  // validated : marqués lus dans Firestore
-Set<String> _poisProposesDeclenches = {}; // proposed : lus localement seulement
-
+  Set<String> _poisValidesDeclenches = {};  // validated : marqués lus dans Firestore
+  Set<String> _poisProposesDeclenches = {}; // proposed : lus localement seulement
+  // Ajoutez cette propriété en haut avec les autres
+  StreamSubscription<Position>? _locationSubscription;
+  late bool _isModerator;
   // Seuil de déclenchement en mètres
   static const double _seuilMetres = 20.0;
 
 @override
 void initState() {
   super.initState();
+  _isModerator = AuthService.isModerator;
   _ttsService.initialiser();
   _initLocation();
   _chargerPois();
-  ForegroundServiceManager.demarrer(); // ← ajouter
+  ForegroundServiceManager.demarrer();
 }
 
 @override
 void dispose() {
+  _locationSubscription?.cancel();
   _ttsService.dispose();
-  ForegroundServiceManager.arreter(); // ← ajouter
+  ForegroundServiceManager.arreter();
   super.dispose();
 }
 
-  Future<void> _chargerPois() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+Future<void> _chargerPois() async {
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  if (uid == null) return;
 
-    final poisValides = await _poiRepository.chargerPoisValides();
-    final mesPois = await _poiRepository.chargerMesPois(uid);
-    final poisLus = await _poiRepository.chargerPoisLus(uid);
+  final poisValides = await _poiRepository.chargerPoisValides();
+  final poisLus = await _poiRepository.chargerPoisLus(uid);
+  
+  final tousLesPois = [...poisValides];
 
-    print('POIs validés : ${poisValides.length}');
-    print('Mes POIs : ${mesPois.length}');
-    print('POIs lus : ${poisLus.length}');
-
-    final tousLesPois = [...poisValides];
-    for (final poi in mesPois) {
+  if (_isModerator) {
+    // Modérateur : charger tous les POIs proposés par tout le monde
+    final tousProposed = await _poiRepository.chargerTousPoisProposed();
+    for (final poi in tousProposed) {
       if (!tousLesPois.any((p) => p.id == poi.id)) {
         tousLesPois.add(poi);
       }
     }
-
-    setState(() {
-      _pointsInteret = tousLesPois;
-      _poisLusIds = poisLus;
-    });
   }
 
-Future<void> _initLocation() async {
-    try {
-      print('=== Vérification service GPS ===');
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      print('Service GPS activé : $serviceEnabled');
-      
-      if (!serviceEnabled) {
-        print('GPS désactivé → fallback Paris');
-        _useFallbackPosition();
-        return;
-      }
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      print('Permission actuelle : $permission');
-      
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        print('Permission après demande : $permission');
-      }
-      if (permission == LocationPermission.deniedForever ||
-          permission == LocationPermission.denied) {
-        print('Permission refusée → fallback Paris');
-        _useFallbackPosition();
-        return;
-      }
-
-      print('Démarrage du stream de position...');
-      await for (final position in Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
-        ),
-      )) {
-        print('Position reçue : ${position.latitude}, ${position.longitude}');
-        if (!mounted) return;
-        final nouvellePosition = LatLng(position.latitude, position.longitude);
-
-        if (!_locationReady) {
-          setState(() {
-            _currentPosition = nouvellePosition;
-            _locationReady = true;
-          });
-        } else {
-          setState(() { _currentPosition = nouvellePosition; });
-          _mapController.move(nouvellePosition, 16.0);
-        }
-        _verifierProximite(nouvellePosition);
-      }
-    } catch (e) {
-      print('Erreur géolocalisation : $e');
-      _useFallbackPosition();
+  // Toujours charger ses propres POIs (initiated)
+  final mesPois = await _poiRepository.chargerMesPois(uid);
+  for (final poi in mesPois) {
+    if (!tousLesPois.any((p) => p.id == poi.id)) {
+      tousLesPois.add(poi);
     }
   }
+
+  print('POIs validés : ${poisValides.length}');
+  print('Mes POIs : ${mesPois.length}');
+  print('POIs lus : ${poisLus.length}');
+
+  setState(() {
+    _pointsInteret = tousLesPois;
+    _poisLusIds = poisLus;
+  });
+}
+
+Future<void> _initLocation() async {
+  try {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _useFallbackPosition();
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever ||
+        permission == LocationPermission.denied) {
+      _useFallbackPosition();
+      return;
+    }
+
+    // Annuler toute subscription précédente
+    await _locationSubscription?.cancel();
+
+    _locationSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((position) {
+      if (!mounted) return;
+      final nouvellePosition = LatLng(position.latitude, position.longitude);
+
+      if (!_locationReady) {
+        setState(() {
+          _currentPosition = nouvellePosition;
+          _locationReady = true;
+        });
+      } else {
+        setState(() {
+          _currentPosition = nouvellePosition;
+        });
+        _mapController.move(nouvellePosition, 16.0);
+      }
+      _verifierProximite(nouvellePosition);
+    }, onError: (e) {
+      print('Erreur stream GPS : $e');
+      _useFallbackPosition();
+    });
+
+  } catch (e) {
+    print('Erreur géolocalisation : $e');
+    _useFallbackPosition();
+  }
+}
 
   void _useFallbackPosition() {
     setState(() {
@@ -358,14 +376,16 @@ List<CircleMarker> _buildCercles() {
 }
 
 void _onCarteTappee(LatLng tapLatLng) {
-  // Chercher le POI INITIATED le plus proche du tap
   const double seuilMetres = 30.0;
 
   PointInteret? poiTouche;
   double distanceMin = double.infinity;
 
   for (final poi in _pointsInteret) {
-    if (poi.status != PoiStatus.initiated) continue;
+    // Utilisateur normal : seulement INITIATED
+    // Modérateur : INITIATED + PROPOSED
+    if (poi.status == PoiStatus.validated) continue;
+    if (!_isModerator && poi.status == PoiStatus.proposed) continue;
 
     final dist = _distance.as(LengthUnit.Meter, tapLatLng, poi.position);
     if (dist < seuilMetres && dist < distanceMin) {
@@ -375,7 +395,11 @@ void _onCarteTappee(LatLng tapLatLng) {
   }
 
   if (poiTouche != null) {
-    _afficherDialogEditionPoi(poiTouche);
+    if (poiTouche.status == PoiStatus.proposed && _isModerator) {
+      _afficherDialogModerationPoi(poiTouche);
+    } else {
+      _afficherDialogEditionPoi(poiTouche);
+    }
   }
 }
 
@@ -465,6 +489,143 @@ void _afficherDialogEditionPoi(PointInteret poi) {
   );
 }
 
+/// Affiche la liste des POIs proposés à modérer
+Future<void> _afficherModerationDialog() async {
+  final poisProposed = _pointsInteret
+      .where((p) => p.status == PoiStatus.proposed)
+      .toList();
+
+  if (poisProposed.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Aucune anecdote en attente')),
+    );
+    return;
+  }
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${poisProposed.length} anecdote(s) en attente'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListView.builder(
+          shrinkWrap: true,
+          itemCount: poisProposed.length,
+          itemBuilder: (context, index) {
+            final poi = poisProposed[index];
+            return ListTile(
+              title: Text(
+                poi.message.length > 50
+                    ? '${poi.message.substring(0, 50)}...'
+                    : poi.message,
+                style: const TextStyle(fontSize: 14),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () {
+                Navigator.pop(context);
+                _afficherDialogModerationPoi(poi);
+              },
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Dialog d'édition/validation d'un POI proposé
+void _afficherDialogModerationPoi(PointInteret poi) {
+  final textController = TextEditingController(text: poi.message);
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Modérer une anecdote'),
+      content: TextField(
+        controller: textController,
+        decoration: const InputDecoration(
+          hintText: 'Message de l\'anecdote',
+        ),
+        maxLines: 4,
+      ),
+      actions: [
+        // Annuler
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        // Rejeter → repasser en initiated
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(context);
+            try {
+              await _poiRepository.mettreAJourPoi(
+                poi.id,
+                {'status': 'initiated'},
+              );
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Anecdote rejetée')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          child: const Text('Rejeter',
+              style: TextStyle(color: Colors.red)),
+        ),
+        // Valider
+        ElevatedButton(
+          onPressed: () async {
+            final message = textController.text.trim();
+            if (message.isEmpty) return;
+            Navigator.pop(context);
+            try {
+              await _poiRepository.mettreAJourPoi(
+                poi.id,
+                {
+                  'message': message,
+                  'status': 'validated',
+                  'approved': true,
+                },
+              );
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Anecdote validée !')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Valider'),
+        ),
+      ],
+    ),
+  );
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -515,37 +676,64 @@ Container(
   child: Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Row(
-        children: [
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _chargerPois,
-              child: const Text('Réafficher',
-                  style: TextStyle(fontSize: 12)),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () {},
-              child: const Text('Parcourir',
-                  style: TextStyle(fontSize: 12)),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _signOut,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Déconnexion',
-                  style: TextStyle(fontSize: 12)),
-            ),
-          ),
-        ],
+Row(
+  children: [
+    Expanded(
+      child: ElevatedButton(
+        onPressed: _chargerPois,
+        child: const Text('Réafficher',
+            style: TextStyle(fontSize: 12)),
       ),
+    ),
+    const SizedBox(width: 4),
+    Expanded(
+      child: ElevatedButton(
+        onPressed: () {
+        if (_currentPosition == null) return;
+          Navigator.push(
+            context,
+          MaterialPageRoute(
+            builder: (_) => ParcourirScreen(
+              positionInitiale: _currentPosition!,
+              pointsInteret: _pointsInteret,
+              poisLusIds: _poisLusIds,
+            ),
+          ),
+        );
+        },
+        child: const Text('Parcourir',
+            style: TextStyle(fontSize: 12)),
+      ),
+    ),
+    // Bouton Modération visible uniquement pour le modérateur
+    if (_isModerator) ...[
+      const SizedBox(width: 4),
+      Expanded(
+        child: ElevatedButton(
+          onPressed: _afficherModerationDialog,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Modération',
+              style: TextStyle(fontSize: 12)),
+        ),
+      ),
+    ],
+    const SizedBox(width: 4),
+    Expanded(
+      child: ElevatedButton(
+        onPressed: _signOut,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+        ),
+        child: const Text('Déconnexion',
+            style: TextStyle(fontSize: 12)),
+      ),
+    ),
+  ],
+),
       const SizedBox(height: 4),
       SizedBox(
         width: double.infinity,
