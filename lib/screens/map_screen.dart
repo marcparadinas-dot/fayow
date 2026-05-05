@@ -823,137 +823,175 @@ Future<void> _appliquerReaffichageParDate(int periodeIndex) async {
 }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: _locationReady
-                  ? FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: _currentPosition!,
-                        initialZoom: 16.0,
-                        onTap: (tapPosition, latLng) => _onCarteTappee(latLng),
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-                          subdomains: const ['a', 'b', 'c', 'd'],
-                          userAgentPackageName: 'com.example.fayow',
-                        ),
-                        CircleLayer(circles: _buildCercles()),
-                        MarkerLayer(
-                          markers: [
-                            if (_currentPosition != null)
-                              Marker(
-                                point: _currentPosition!,
-                                width: 40,
-                                height: 40,
-                                child: const Icon(
-                                  Icons.navigation,
-                                  color: Colors.blue,
-                                  size: 40,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    )
-                  : const Center(child: CircularProgressIndicator()),
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    body: SafeArea(
+      child: Column(
+        children: [
+          // Bandeau haut avec image
+          SizedBox(
+            width: double.infinity,
+            height: 110,
+            child: Image.asset(
+              'assets/images/fayow_bandeau_haut.png',
+              fit: BoxFit.cover,
             ),
-            
-            // Barre du bas
-Container(
-  color: Colors.white,
-  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-  child: Column(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-Row(
+          ),
+
+          // Carte
+          Expanded(
+            child: _locationReady
+                ? FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: _currentPosition!,
+                      initialZoom: 16.0,
+                      onTap: (tapPosition, latLng) =>
+                          _onCarteTappee(latLng),
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                        subdomains: const ['a', 'b', 'c', 'd'],
+                        userAgentPackageName: 'com.example.fayow',
+                      ),
+                      CircleLayer(circles: _buildCercles()),
+                      MarkerLayer(
+                        markers: [
+                          if (_currentPosition != null)
+                            Marker(
+                              point: _currentPosition!,
+                              width: 40,
+                              height: 40,
+                              child: const Icon(
+                                Icons.navigation,
+                                color: Colors.blue,
+                                size: 40,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  )
+                : const Center(child: CircularProgressIndicator()),
+          ),
+
+          // Boutons Modération + Ajouter (au-dessus de la barre du bas)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+            child: Row(
+              children: [
+                if (_isModerator)
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _afficherModerationDialog,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Modération',
+                          style: TextStyle(fontSize: 12)),
+                    ),
+                  ),
+                if (_isModerator) const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _onAjouterPoiClicked,
+                    icon: const Icon(Icons.add_location_alt, size: 16),
+                    label: const Text('Ajouter Anecdote',
+                        style: TextStyle(fontSize: 12)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Bandeau bas : image en fond, boutons par-dessus
+          Container(
+            width: double.infinity,
+            height: 110,
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('assets/images/fayow_bandeau_bas.png'),
+                fit: BoxFit.cover,
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            child: 
+            Row(
   children: [
     Expanded(
-  child: ElevatedButton(
-    onPressed: _onReafficherClicked,
-    style: _modeReaffichage
-        ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
-        : null,
-    child: Text(
-      _modeReaffichage ? 'Retour' : 'Réafficher',
-      style: const TextStyle(fontSize: 12),
+      child: ElevatedButton(
+        onPressed: _onReafficherClicked,
+        style: (_modeReaffichage
+            ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
+            : ElevatedButton.styleFrom(
+                backgroundColor: Colors.white.withOpacity(0.85),
+                foregroundColor: Colors.black87,
+              ))
+            .copyWith(
+          textStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 11),
+          ),
+        ),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(_modeReaffichage ? 'Retour' : 'Réafficher'),
+        ),
+      ),
     ),
-  ),
-),
     const SizedBox(width: 4),
     Expanded(
       child: ElevatedButton(
         onPressed: () {
-        if (_currentPosition == null) return;
+          if (_currentPosition == null) return;
           Navigator.push(
             context,
-          MaterialPageRoute(
-            builder: (_) => ParcourirScreen(
-              positionInitiale: _currentPosition!,
-              pointsInteret: _pointsInteret,
-              poisLusIds: _poisLusIds,
+            MaterialPageRoute(
+              builder: (_) => ParcourirScreen(
+                positionInitiale: _currentPosition!,
+                pointsInteret: _pointsInteret,
+                poisLusIds: _poisLusIds,
+              ),
             ),
-          ),
-        );
+          );
         },
-        child: const Text('Parcourir',
-            style: TextStyle(fontSize: 12)),
-      ),
-    ),
-    // Bouton Modération visible uniquement pour le modérateur
-    if (_isModerator) ...[
-      const SizedBox(width: 4),
-      Expanded(
-        child: ElevatedButton(
-          onPressed: _afficherModerationDialog,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.indigo,
-            foregroundColor: Colors.white,
-          ),
-          child: const Text('Modération',
-              style: TextStyle(fontSize: 12)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white.withOpacity(0.85),
+          foregroundColor: Colors.black87,
+        ),
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Parcourir'),
         ),
       ),
-    ],
+    ),
     const SizedBox(width: 4),
     Expanded(
       child: ElevatedButton(
         onPressed: _signOut,
         style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.red,
+          backgroundColor: Colors.red.withOpacity(0.85),
           foregroundColor: Colors.white,
         ),
-        child: const Text('Déconnexion',
-            style: TextStyle(fontSize: 12)),
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Déconnexion'),
+        ),
       ),
     ),
   ],
 ),
-      const SizedBox(height: 4),
-      SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: _onAjouterPoiClicked,
-          icon: const Icon(Icons.add_location_alt),
-          label: const Text('Ajouter Anecdote'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepPurple,
-            foregroundColor: Colors.white,
           ),
-        ),
+        ],
       ),
-    ],
-  ),
-),
-          ],
-        ),
-      ),
-    );
-  }
+    ),
+  );
+}
 }

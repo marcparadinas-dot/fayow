@@ -6,10 +6,18 @@ import 'firebase_options.dart';
 import 'screens/auth_screen.dart';
 import 'screens/map_screen.dart';
 import 'services/foreground_service.dart';
+import 'package:flutter/services.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Forcer le mode portrait
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+  
   ForegroundServiceManager.initialiser();
   runApp(const FayowApp());
 }
