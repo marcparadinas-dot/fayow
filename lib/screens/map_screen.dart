@@ -46,9 +46,9 @@ void initState() {
   super.initState();
   _isModerator = AuthService.isModerator;
   _ttsService.initialiser();
+  _communeService.initialiser();
   _initLocation();
   _chargerPois();
-  _communeService.initialiser();
   ForegroundServiceManager.demarrer();
 }
 
@@ -56,8 +56,8 @@ void initState() {
 void dispose() {
   _locationSubscription?.cancel();
   _ttsService.dispose();
-  _communeService.dispose();
   ForegroundServiceManager.arreter();
+  _communeService.dispose();
   super.dispose();
 }
 
@@ -146,6 +146,7 @@ Future<void> _initLocation() async {
           longitude: position.longitude,
           pointsInteret: _pointsInteret,
           poisLusIds: _poisLusIds,
+          ttsEnCours: _ttsService.estEnCoursDeLecture,
         );
     }, onError: (e) {
       print('Erreur stream GPS : $e');
@@ -204,13 +205,16 @@ void _verifierProximite(LatLng position) {
 Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
   _poisValidesDeclenches.add(poi.id);
 
-  // Afficher le dialog avant la lecture
-  _afficherDialogPoi(poi.message);
+  // Créer un completer pour signaler la fin de la lecture
+  final lectureCompleter = Completer<void>();
+
+  // Afficher le dialog avec le future de fin
+  _afficherDialogPoi(poi.message, lectureTerminee: lectureCompleter.future);
 
   await _ttsService.lire(poi.message);
-
-  // Fermer le dialog après la lecture
-  _fermerDialogPoi();
+  
+  // Signaler la fin de la lecture
+  if (!lectureCompleter.isCompleted) lectureCompleter.complete();
 
   try {
     await FirebaseFirestore.instance
@@ -221,11 +225,8 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
         .set({'readAt': FieldValue.serverTimestamp()});
 
     if (mounted) {
-      setState(() {
-        _poisLusIds.add(poi.id);
-      });
+      setState(() { _poisLusIds.add(poi.id); });
     }
-    print('POI validé ${poi.id} marqué comme lu');
   } catch (e) {
     print('Erreur marquage POI lu : $e');
     _poisValidesDeclenches.remove(poi.id);
@@ -239,32 +240,42 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
 Future<void> _declencherPoiPropose(PointInteret poi) async {
   _poisProposesDeclenches.add(poi.id);
 
-  // Afficher le dialog avant la lecture
-  _afficherDialogPoi(poi.message);
+  final lectureCompleter = Completer<void>();
+  _afficherDialogPoi(poi.message, lectureTerminee: lectureCompleter.future);
 
   await _ttsService.lire(poi.message);
-
-  // Fermer le dialog après la lecture
-  _fermerDialogPoi();
-
-  print('POI proposé ${poi.id} lu localement');
+  if (!lectureCompleter.isCompleted) lectureCompleter.complete();
 
   if (_currentPosition != null) {
     _verifierProximite(_currentPosition!);
   }
 }
-
 /// Affiche un dialog avec le texte du POI pendant la lecture TTS
-void _afficherDialogPoi(String message) {
+void _afficherDialogPoi(String message, {required Future<void> lectureTerminee}) {
   showDialog(
     context: context,
-    barrierDismissible: false, // Ne se ferme pas en tapant à côté
-    builder: (context) => AlertDialog(
-      content: Text(message),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-    ),
+    barrierDismissible: false,
+    builder: (context) {
+      // Fermer automatiquement quand la lecture est terminée
+      lectureTerminee.then((_) {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      });
+      return AlertDialog(
+        content: Text(message),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        actions: [
+          // Bouton de secours si le dialog reste bloqué
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Fermer'),
+          ),
+        ],
+      );
+    },
   );
 }
 

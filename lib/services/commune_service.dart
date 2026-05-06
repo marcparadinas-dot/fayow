@@ -62,17 +62,21 @@ class CommuneService {
   // Point d'entrée principal
   // -------------------------------------------------------------------------
 
-  Future<void> verifierCommune({
-    required double latitude,
-    required double longitude,
-    required List<PointInteret> pointsInteret,
-    required Set<String> poisLusIds,
-  }) async {
-    // Vérifier la temporisation
-    if (_derniereAnnonce != null) {
-      final elapsed = DateTime.now().difference(_derniereAnnonce!);
-      if (elapsed < _tempoMin) return;
-    }
+Future<void> verifierCommune({
+  required double latitude,
+  required double longitude,
+  required List<PointInteret> pointsInteret,
+  required Set<String> poisLusIds,
+  required bool ttsEnCours, // ← nouveau paramètre
+}) async {
+  // Ne pas annoncer si le TTS principal est en cours de lecture
+  if (ttsEnCours) return;
+
+  // Vérifier la temporisation
+  if (_derniereAnnonce != null) {
+    final elapsed = DateTime.now().difference(_derniereAnnonce!);
+    if (elapsed < _tempoMin) return;
+  }
 
     try {
       final commune = await _obtenirNomCommune(latitude, longitude);
@@ -213,10 +217,13 @@ class CommuneService {
   // Annonce vocale
   // -------------------------------------------------------------------------
 
-  Future<void> _annoncerCommune(String commune, int? total, int? lus) async {
-    if (!_ttsReady) return;
+Future<void> _annoncerCommune(String commune, int? total, int? lus) async {
+  if (!_ttsReady) return;
 
-    final String message;
+  // Petite pause pour s'assurer que le contexte est stable
+  await Future.delayed(const Duration(milliseconds: 500));
+
+  final String message;
     if (total == null) {
       message = 'Vous êtes à $commune.';
     } else if (total == 0) {
