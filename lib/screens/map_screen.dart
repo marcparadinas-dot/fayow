@@ -12,6 +12,7 @@ import '../services/tts_service.dart';
 import '../screens/auth_screen.dart';
 import '../services/foreground_service.dart';
 import '../services/auth_service.dart';
+import '../services/commune_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -25,6 +26,7 @@ class _MapScreenState extends State<MapScreen> {
   final PoiRepository _poiRepository = PoiRepository();
   final TtsService _ttsService = TtsService();
   final Distance _distance = const Distance();
+  final CommuneService _communeService = CommuneService();
 
   LatLng? _currentPosition;
   bool _locationReady = false;
@@ -46,6 +48,7 @@ void initState() {
   _ttsService.initialiser();
   _initLocation();
   _chargerPois();
+  _communeService.initialiser();
   ForegroundServiceManager.demarrer();
 }
 
@@ -53,6 +56,7 @@ void initState() {
 void dispose() {
   _locationSubscription?.cancel();
   _ttsService.dispose();
+  _communeService.dispose();
   ForegroundServiceManager.arreter();
   super.dispose();
 }
@@ -136,6 +140,13 @@ Future<void> _initLocation() async {
         _mapController.move(nouvellePosition, 16.0);
       }
       _verifierProximite(nouvellePosition);
+              // Vérification de la commune (non bloquant)
+        _communeService.verifierCommune(
+          latitude: position.latitude,
+          longitude: position.longitude,
+          pointsInteret: _pointsInteret,
+          poisLusIds: _poisLusIds,
+        );
     }, onError: (e) {
       print('Erreur stream GPS : $e');
       _useFallbackPosition();
