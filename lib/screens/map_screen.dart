@@ -31,6 +31,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _currentPosition;
   bool _locationReady = false;
   bool _modeReaffichage = false;
+  bool _poisCharges = false;
   List<PointInteret> _pointsInteret = [];
   Set<String> _poisLusIds = {};
   Set<String> _poisValidesDeclenches = {};  // validated : marqués lus dans Firestore
@@ -44,12 +45,11 @@ class _MapScreenState extends State<MapScreen> {
 @override
 void initState() {
   super.initState();
-  _isModerator = AuthService.isModerator;
   _ttsService.initialiser();
-  _communeService.initialiser();
+  _communeService.initialiser(_ttsService.tts); // ← passer l'instance
+  _isModerator = AuthService.isModerator;
   _initLocation();
   _chargerPois();
-  ForegroundServiceManager.demarrer();
 }
 
 @override
@@ -95,7 +95,19 @@ Future<void> _chargerPois() async {
   setState(() {
     _pointsInteret = tousLesPois;
     _poisLusIds = poisLus;
+    _poisCharges = true;
   });
+
+  // Déclencher l'annonce commune APRÈS le chargement des POIs
+  /*if (_currentPosition != null) {
+    _communeService.verifierCommune(
+      latitude: _currentPosition!.latitude,
+      longitude: _currentPosition!.longitude,
+      pointsInteret: _pointsInteret,
+      poisLusIds: _poisLusIds,
+      ttsEnCours: _ttsService.estEnCoursDeLecture,
+    );
+  }*/
 }
 
 Future<void> _initLocation() async {
@@ -140,14 +152,16 @@ Future<void> _initLocation() async {
         _mapController.move(nouvellePosition, 16.0);
       }
       _verifierProximite(nouvellePosition);
-              // Vérification de la commune (non bloquant)
-        _communeService.verifierCommune(
-          latitude: position.latitude,
-          longitude: position.longitude,
-          pointsInteret: _pointsInteret,
-          poisLusIds: _poisLusIds,
-          ttsEnCours: _ttsService.estEnCoursDeLecture,
-        );
+// Annoncer la commune uniquement après chargement des POIs
+if (_poisCharges) {
+  _communeService.verifierCommune(
+    latitude: position.latitude,
+    longitude: position.longitude,
+    pointsInteret: _pointsInteret,
+    poisLusIds: _poisLusIds,
+    ttsEnCours: _ttsService.estEnCoursDeLecture,
+  );
+}
     }, onError: (e) {
       print('Erreur stream GPS : $e');
       _useFallbackPosition();
@@ -205,15 +219,9 @@ void _verifierProximite(LatLng position) {
 Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
   _poisValidesDeclenches.add(poi.id);
 
-  // Créer un completer pour signaler la fin de la lecture
   final lectureCompleter = Completer<void>();
-
-  // Afficher le dialog avec le future de fin
   _afficherDialogPoi(poi.message, lectureTerminee: lectureCompleter.future);
-
   await _ttsService.lire(poi.message);
-  
-  // Signaler la fin de la lecture
   if (!lectureCompleter.isCompleted) lectureCompleter.complete();
 
   try {
@@ -223,7 +231,6 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
         .collection('readPois')
         .doc(poi.id)
         .set({'readAt': FieldValue.serverTimestamp()});
-
     if (mounted) {
       setState(() { _poisLusIds.add(poi.id); });
     }
@@ -234,6 +241,17 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
 
   if (_currentPosition != null) {
     _verifierProximite(_currentPosition!);
+
+    // Tenter l'annonce commune après la fin de la lecture
+    if (_poisCharges) {
+      _communeService.verifierCommune(
+        latitude: _currentPosition!.latitude,
+        longitude: _currentPosition!.longitude,
+        pointsInteret: _pointsInteret,
+        poisLusIds: _poisLusIds,
+        ttsEnCours: false, // TTS vient de se terminer
+      );
+    }
   }
 }
 
@@ -242,24 +260,37 @@ Future<void> _declencherPoiPropose(PointInteret poi) async {
 
   final lectureCompleter = Completer<void>();
   _afficherDialogPoi(poi.message, lectureTerminee: lectureCompleter.future);
-
   await _ttsService.lire(poi.message);
   if (!lectureCompleter.isCompleted) lectureCompleter.complete();
 
   if (_currentPosition != null) {
     _verifierProximite(_currentPosition!);
+
+    // Tenter l'annonce commune après la fin de la lecture
+    if (_poisCharges) {
+      _communeService.verifierCommune(
+        latitude: _currentPosition!.latitude,
+        longitude: _currentPosition!.longitude,
+        pointsInteret: _pointsInteret,
+        poisLusIds: _poisLusIds,
+        ttsEnCours: false,
+      );
+    }
   }
 }
+
 /// Affiche un dialog avec le texte du POI pendant la lecture TTS
+// Clé globale pour référencer le dialog POI
+
 void _afficherDialogPoi(String message, {required Future<void> lectureTerminee}) {
   showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (context) {
-      // Fermer automatiquement quand la lecture est terminée
+    builder: (dialogContext) {
       lectureTerminee.then((_) {
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.pop(context);
+        // Utiliser dialogContext pour fermer ce dialog précisément
+        if (dialogContext.mounted) {
+          Navigator.of(dialogContext).pop();
         }
       });
       return AlertDialog(
@@ -268,9 +299,8 @@ void _afficherDialogPoi(String message, {required Future<void> lectureTerminee})
           borderRadius: BorderRadius.circular(12),
         ),
         actions: [
-          // Bouton de secours si le dialog reste bloqué
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             child: const Text('Fermer'),
           ),
         ],
@@ -278,7 +308,6 @@ void _afficherDialogPoi(String message, {required Future<void> lectureTerminee})
     },
   );
 }
-
 /// Ferme le dialog du POI
 void _fermerDialogPoi() {
   if (mounted && Navigator.canPop(context)) {

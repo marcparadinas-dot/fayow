@@ -18,34 +18,17 @@ class CommuneService {
   static const Duration _tempoMin = Duration(minutes: 10);
 
   // TTS dédié aux annonces de commune (voix distincte)
-  final FlutterTts _tts = FlutterTts();
+  late FlutterTts _tts;
   bool _ttsReady = false;
 
   // -------------------------------------------------------------------------
   // Initialisation
   // -------------------------------------------------------------------------
 
-  Future<void> initialiser() async {
-    await _tts.setLanguage('fr-FR');
-    await _tts.setSpeechRate(0.5);
-    await _tts.setVolume(1.0);
-
-    // Essayer une voix féminine pour distinguer des annonces POI
-    final voices = await _tts.getVoices as List?;
-    if (voices != null) {
-      final voixFeminine = voices.cast<Map>().firstWhere(
-        (v) =>
-            (v['locale'] as String?)?.startsWith('fr') == true &&
-            ((v['name'] as String?)?.toLowerCase().contains('female') == true ||
-                (v['name'] as String?)?.toLowerCase().contains('frf') == true),
-        orElse: () => <String, String>{},
-      );
-      if (voixFeminine.isNotEmpty && voixFeminine['name'] != null) {
-        await _tts.setVoice({'name': voixFeminine['name'], 'locale': 'fr-FR'});
-      }
-    }
-
+  Future<void> initialiser(FlutterTts ttsInstance) async {
+    _tts = ttsInstance; // Utiliser l'instance partagée
     _ttsReady = true;
+    // Pas besoin de reconfigurer la langue, déjà fait par TtsService
   }
 
   void dispose() {
@@ -67,17 +50,25 @@ Future<void> verifierCommune({
   required double longitude,
   required List<PointInteret> pointsInteret,
   required Set<String> poisLusIds,
-  required bool ttsEnCours, // ← nouveau paramètre
+  required bool ttsEnCours,
 }) async {
-  // Ne pas annoncer si le TTS principal est en cours de lecture
-  if (ttsEnCours) return;
+  print('=== verifierCommune appelé : ttsEnCours=$ttsEnCours, '
+      'pointsInteret=${pointsInteret.length}, '
+      'derniereAnnonce=$_derniereAnnonce ===');
 
-  // Vérifier la temporisation
-  if (_derniereAnnonce != null) {
-    final elapsed = DateTime.now().difference(_derniereAnnonce!);
-    if (elapsed < _tempoMin) return;
+  if (ttsEnCours) {
+    print('=== Annonce bloquée : TTS en cours ===');
+    return;
   }
 
+  if (_derniereAnnonce != null) {
+    final elapsed = DateTime.now().difference(_derniereAnnonce!);
+    print('=== Temps depuis dernière annonce : ${elapsed.inSeconds}s ===');
+    if (elapsed < _tempoMin) {
+      print('=== Annonce bloquée : temporisation ===');
+      return;
+    }
+  }
     try {
       final commune = await _obtenirNomCommune(latitude, longitude);
       if (commune == null) return;
@@ -219,7 +210,9 @@ Future<void> verifierCommune({
 
 Future<void> _annoncerCommune(String commune, int? total, int? lus) async {
   if (!_ttsReady) return;
-
+  // S'assurer que la langue est bien configurée
+  await _tts.setLanguage('fr-FR');
+  await _tts.setSpeechRate(0.5);
   // Petite pause pour s'assurer que le contexte est stable
   await Future.delayed(const Duration(milliseconds: 500));
 

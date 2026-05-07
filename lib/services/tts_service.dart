@@ -4,7 +4,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 class TtsService {
   final FlutterTts _tts = FlutterTts();
   bool _estEnCoursDeLecture = false;
-
+  // Exposer l'instance pour CommuneService
+  FlutterTts get tts => _tts;
   Future<void> initialiser() async {
     await _tts.setLanguage('fr-FR');
     await _tts.setSpeechRate(0.5);
