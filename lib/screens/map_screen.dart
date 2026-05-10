@@ -13,6 +13,9 @@ import '../screens/auth_screen.dart';
 import '../services/foreground_service.dart';
 import '../services/auth_service.dart';
 import '../services/commune_service.dart';
+import 'profil_screen.dart';
+import '../services/score_service.dart';
+import 'classement_screen.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -97,7 +100,8 @@ Future<void> _chargerPois() async {
     _poisLusIds = poisLus;
     _poisCharges = true;
   });
-
+// Initialiser le score si nécessaire (première fois uniquement)
+    ScoreService.initialiserScoreSiNecessaire(uid);
   // Déclencher l'annonce commune APRÈS le chargement des POIs
   /*if (_currentPosition != null) {
     _communeService.verifierCommune(
@@ -233,6 +237,9 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
         .set({'readAt': FieldValue.serverTimestamp()});
     if (mounted) {
       setState(() { _poisLusIds.add(poi.id); });
+// Mettre à jour le score
+ScoreService.incrementerPoisLus(uid);
+
     }
   } catch (e) {
     print('Erreur marquage POI lu : $e');
@@ -380,6 +387,7 @@ void _onAjouterPoiClicked() {
   );
 }
 
+/*
   Future<void> _signOut() async {
     _ttsService.arreter();
     await FirebaseAuth.instance.signOut();
@@ -390,7 +398,7 @@ void _onAjouterPoiClicked() {
       );
     }
   }
-
+*/
   Color _getCercleColor(PointInteret poi) {
     switch (poi.status) {
       case PoiStatus.validated:
@@ -963,7 +971,7 @@ Widget build(BuildContext context) {
             ),
           ),
 
-          // Bandeau bas : image en fond, boutons par-dessus
+                    // Bandeau bas : image en fond, boutons par-dessus
           Container(
             width: double.infinity,
             height: 110,
@@ -976,69 +984,97 @@ Widget build(BuildContext context) {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
             child: 
             Row(
-  children: [
-    Expanded(
-      child: ElevatedButton(
-        onPressed: _onReafficherClicked,
-        style: (_modeReaffichage
-            ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
-            : ElevatedButton.styleFrom(
-                backgroundColor: Colors.white.withOpacity(0.85),
-                foregroundColor: Colors.black87,
-              ))
-            .copyWith(
-          textStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 11),
-          ),
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                  onPressed: _onReafficherClicked,
+                  style: (_modeReaffichage
+                    ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
+                    : ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white.withOpacity(0.85),
+                  foregroundColor: Colors.black87,
+                ))
+                .copyWith(
+                  textStyle: WidgetStateProperty.all(
+                  const TextStyle(fontSize: 11),
+                  ),
+                ),
+                  child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(_modeReaffichage ? 'Retour' : 'Réafficher'),
+                  ),
+              ),
         ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(_modeReaffichage ? 'Retour' : 'Réafficher'),
-        ),
-      ),
-    ),
-    const SizedBox(width: 4),
-    Expanded(
-      child: ElevatedButton(
-        onPressed: () {
-          if (_currentPosition == null) return;
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ParcourirScreen(
-                positionInitiale: _currentPosition!,
-                pointsInteret: _pointsInteret,
-                poisLusIds: _poisLusIds,
+        const SizedBox(width: 4),
+            Expanded(
+              child: ElevatedButton(
+              onPressed: () {
+                if (_currentPosition == null) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ParcourirScreen(
+                      positionInitiale: _currentPosition!,
+                      pointsInteret: _pointsInteret,
+                      poisLusIds: _poisLusIds,
+                      ),
+                    ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white.withOpacity(0.85),
+              foregroundColor: Colors.black87,
+              ).copyWith(
+                textStyle: WidgetStateProperty.all(
+                  const TextStyle(fontSize: 11),
+                ),
+              ),
+              child: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('Parcourir'),
               ),
             ),
-          );
-        },
+        ),
+        const SizedBox(width: 4),
+
+    Expanded(
+      child: ElevatedButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ClassementScreen()),
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white.withOpacity(0.85),
           foregroundColor: Colors.black87,
         ),
         child: const FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text('Parcourir'),
+          child: Text('Classement'),
         ),
       ),
     ),
     const SizedBox(width: 4),
-    Expanded(
-      child: ElevatedButton(
-        onPressed: _signOut,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.red.withOpacity(0.85),
-          foregroundColor: Colors.white,
-        ),
-        child: const FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text('Déconnexion'),
-        ),
-      ),
+
+          Expanded(
+            child: ElevatedButton(
+            onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ProfilScreen()),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple.withOpacity(0.85),
+            foregroundColor: Colors.white,
+            ),
+            child: const FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text('Profil'),
+            ),
+            ),
+          ),
+    ],
     ),
-  ],
-),
           ),
         ],
       ),

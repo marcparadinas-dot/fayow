@@ -5,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/poi_models.dart';
 import '../repository/poi_repository.dart';
 import '../services/auth_service.dart';
+import '../services/score_service.dart';
+import 'classement_screen.dart';
 
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
@@ -643,10 +645,20 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Parcourir mes anecdotes'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+appBar: AppBar(
+  title: const Text('Parcourir mes anecdotes'),
+  backgroundColor: Colors.deepPurple,
+  foregroundColor: Colors.white,
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.leaderboard),
+      tooltip: 'Classement',
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ClassementScreen()),
+      ),
+    ),
+  ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -658,6 +670,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
           ],
         ),
       ),
+      
       body: TabBarView(
         controller: _tabController,
         children: [
