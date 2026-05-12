@@ -991,8 +991,8 @@ Widget build(BuildContext context) {
                   style: (_modeReaffichage
                     ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
                     : ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white.withOpacity(0.85),
-                  foregroundColor: Colors.black87,
+                  backgroundColor: const Color.fromRGBO(230, 157, 217, 1).withOpacity(0.85),
+                  foregroundColor: Colors.white,
                 ))
                 .copyWith(
                   textStyle: WidgetStateProperty.all(
@@ -1001,29 +1001,29 @@ Widget build(BuildContext context) {
                 ),
                   child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text(_modeReaffichage ? 'Retour' : 'Réafficher'),
+                  child: Text(_modeReaffichage ? 'Retour' : 'Réafficher\nanecdotes'),
                   ),
               ),
         ),
         const SizedBox(width: 4),
-            Expanded(
-              child: ElevatedButton(
+          Expanded(
+            child: ElevatedButton(
               onPressed: () {
-                if (_currentPosition == null) return;
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ParcourirScreen(
-                      positionInitiale: _currentPosition!,
-                      pointsInteret: _pointsInteret,
-                      poisLusIds: _poisLusIds,
-                      ),
-                    ),
-                );
+              if (_currentPosition == null) return;
+                Navigator.push(
+                  context,
+                   MaterialPageRoute(
+                     builder: (_) => ParcourirScreen(
+                     positionInitiale: _currentPosition!,
+                     pointsInteret: _pointsInteret,
+                     poisLusIds: _poisLusIds,
+                     ),
+                   ),
+               );
               },
               style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white.withOpacity(0.85),
-              foregroundColor: Colors.black87,
+              backgroundColor: const Color.fromRGBO(18, 119, 63, 1).withOpacity(0.85),
+              foregroundColor: Colors.white,
               ).copyWith(
                 textStyle: WidgetStateProperty.all(
                   const TextStyle(fontSize: 11),
@@ -1031,30 +1031,30 @@ Widget build(BuildContext context) {
               ),
               child: const FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text('Parcourir'),
+              child: Text('Voir mes\nanecdotes'),
               ),
             ),
-        ),
+          ),
+        /*
         const SizedBox(width: 4),
-
-    Expanded(
-      child: ElevatedButton(
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ClassementScreen()),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white.withOpacity(0.85),
-          foregroundColor: Colors.black87,
-        ),
-        child: const FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text('Classement'),
-        ),
-      ),
-    ),
-    const SizedBox(width: 4),
-
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassementScreen()),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromRGBO(230, 131, 18, 1).withOpacity(0.85),
+                foregroundColor: Colors.white,
+              ),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Classement'),
+              ),
+            ),
+          ),
+          */
+        const SizedBox(width: 4),
           Expanded(
             child: ElevatedButton(
             onPressed: () {
@@ -1074,7 +1074,7 @@ Widget build(BuildContext context) {
             ),
           ),
     ],
-    ),
+            ),
           ),
         ],
       ),

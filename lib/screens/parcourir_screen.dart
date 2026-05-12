@@ -646,11 +646,32 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   Widget build(BuildContext context) {
     return Scaffold(
 appBar: AppBar(
-  title: const Text('Parcourir mes anecdotes'),
+  title: const Text('Mes anecdotes'),
   backgroundColor: Colors.deepPurple,
   foregroundColor: Colors.white,
   actions: [
-    IconButton(
+
+            SizedBox(
+            width: 100, // Largeur du bouton
+            height: 35, // Hauteur du bouton
+            child: ElevatedButton(
+
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassementScreen()),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromRGBO(230, 131, 18, 1).withOpacity(0.85),
+                foregroundColor: Colors.white,
+              ),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Classement'),
+              ),
+
+          ),
+            ),
+    /*IconButton(
       icon: const Icon(Icons.leaderboard),
       tooltip: 'Classement',
       onPressed: () => Navigator.push(
@@ -658,6 +679,8 @@ appBar: AppBar(
         MaterialPageRoute(builder: (_) => const ClassementScreen()),
       ),
     ),
+  */
+  
   ],
         bottom: TabBar(
           controller: _tabController,

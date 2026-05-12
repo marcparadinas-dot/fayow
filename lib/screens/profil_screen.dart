@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'auth_screen.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'classement_screen.dart';
 
 class ProfilScreen extends StatefulWidget {
   const ProfilScreen({super.key});
@@ -192,7 +194,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
   // -------------------------------------------------------------------------
   // Changement d'email
   // -------------------------------------------------------------------------
-/*
+
   Future<void> _changerEmail() async {
     final controller = TextEditingController(text: _email);
 
@@ -233,81 +235,47 @@ class _ProfilScreenState extends State<ProfilScreen> {
       ),
     );
   }
-*/
-/*
+
 Future<void> _sauvegarderEmail(String nouvelEmail) async {
-  // Demander le mot de passe pour ré-authentifier
-  final passwordController = TextEditingController();
-  final confirme = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Confirmez votre mot de passe'),
-      content: TextField(
-        controller: passwordController,
-        obscureText: true,
-        decoration: const InputDecoration(labelText: 'Mot de passe actuel'),
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Annuler'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Confirmer'),
-        ),
-      ],
-    ),
-  );
-
-  if (confirme != true) return;
-
   setState(() => _isLoading = true);
   try {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    // Ré-authentifier
-    final credential = EmailAuthProvider.credential(
-      email: user.email!,
-      password: passwordController.text.trim(),
-    );
-    await user.reauthenticateWithCredential(credential);
+    // Forcer le rafraîchissement du token avant l'appel
+    await user.getIdToken(true);
 
-    // Envoyer email de vérification vers la nouvelle adresse
-    await user.verifyBeforeUpdateEmail(nouvelEmail);
+    final uid = user.uid;
+    final functionsInstance = FirebaseFunctions.instanceFor(region: 'us-central1');
+    final callable = functionsInstance.httpsCallable('updateUserEmail');
+    
+    await callable.call({
+      'targetUid': uid,
+      'newEmail': nouvelEmail,
+    });
 
-    setState(() => _isLoading = false);
+    setState(() {
+      _email = nouvelEmail;
+      _isLoading = false;
+    });
 
     if (mounted) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Email de confirmation envoyé'),
-          content: Text(
-            'Un email de confirmation a été envoyé à $nouvelEmail.\n\n'
-            'Cliquez sur le lien reçu pour valider votre nouvelle adresse.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email mis à jour ✓')),
       );
     }
-  } on FirebaseAuthException catch (e) {
+  } on FirebaseFunctionsException catch (e) {
     setState(() => _isLoading = false);
     String message;
     switch (e.code) {
-      case 'wrong-password':
-      case 'invalid-credential':
-        message = 'Mot de passe incorrect.';
+      case 'already-exists':
+        message = 'Cet email est déjà utilisé.';
         break;
-      case 'too-many-requests':
-        message = 'Trop de tentatives. Réessayez plus tard.';
+      case 'not-found':
+        message = 'Utilisateur introuvable.';
+        break;
+      case 'unauthenticated':
+        message = 'Session expirée, reconnectez-vous.';
         break;
       default:
         message = 'Erreur : ${e.message}';
@@ -320,9 +288,16 @@ Future<void> _sauvegarderEmail(String nouvelEmail) async {
         ),
       );
     }
+  } catch (e) {
+    setState(() => _isLoading = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e')),
+      );
+    }
   }
 }
-*/
+
   // -------------------------------------------------------------------------
   // Déconnexion
   // -------------------------------------------------------------------------
@@ -349,7 +324,41 @@ Future<void> _sauvegarderEmail(String nouvelEmail) async {
         title: const Text('Mon profil'),
         backgroundColor: Colors.deepPurple,
         foregroundColor: Colors.white,
+  actions: [
+
+            SizedBox(
+            width: 100, // Largeur du bouton
+            height: 35, // Hauteur du bouton
+            child: ElevatedButton(
+
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ClassementScreen()),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromRGBO(230, 131, 18, 1).withOpacity(0.85),
+                foregroundColor: Colors.white,
+              ),
+              child: const FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text('Classement'),
+              ),
+
+          ),
+            ),
+    /*IconButton(
+      icon: const Icon(Icons.leaderboard),
+      tooltip: 'Classement',
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ClassementScreen()),
       ),
+    ),
+  */
+  
+  ],
+      ),
+      
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -402,10 +411,14 @@ Future<void> _sauvegarderEmail(String nouvelEmail) async {
                           ),
                         ),
                         const Divider(height: 1),
-                      ListTile(
+                        ListTile(
                           leading: const Icon(Icons.email, color: Colors.deepPurple),
                           title: const Text('Email'),
                           subtitle: Text(_email),
+                          trailing: IconButton(
+                          icon: const Icon(Icons.edit, size: 20),
+                          onPressed: _changerEmail,
+                          ),
                         ),
                       ],
                     ),
