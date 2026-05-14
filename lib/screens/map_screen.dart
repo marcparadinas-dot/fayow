@@ -16,6 +16,7 @@ import '../services/commune_service.dart';
 import 'profil_screen.dart';
 import '../services/score_service.dart';
 import 'classement_screen.dart';
+import '../services/mail_service.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -624,28 +625,11 @@ void _afficherDialogModerationPoi(PointInteret poi) {
         TextButton(
           onPressed: () async {
             Navigator.pop(context);
-            try {
-              await _poiRepository.mettreAJourPoi(
-                poi.id,
-                {'status': 'initiated'},
-              );
-              await _chargerPois();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Anecdote rejetée')),
-                );
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur : $e')),
-                );
-              }
-            }
+            await _afficherDialogRejetAvecMotif(poi);
           },
-          child: const Text('Rejeter',
-              style: TextStyle(color: Colors.red)),
+          child: const Text('Rejeter', style: TextStyle(color: Colors.red)),
         ),
+
         // Valider
         ElevatedButton(
           onPressed: () async {
@@ -880,6 +864,181 @@ Future<void> _appliquerReaffichageParDate(int periodeIndex) async {
   _verifierProximite(_currentPosition!);
 }
 }
+
+Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
+  // 1. Charger les motifs depuis Firestore
+  final motifs = await MailService.chargerMotifsRejet();
+ 
+  if (motifs.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Impossible de charger les motifs')),
+    );
+    return;
+  }
+ 
+  // 2. État local du dialog
+  final motifsSelectionnes = <String>{};
+  final commentaireController = TextEditingController();
+ 
+  // 3. Afficher le dialog de sélection
+  final confirme = await showDialog<bool>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setStateDialog) => AlertDialog(
+        title: const Text('Motif du rejet'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Aperçu du POI
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: Text(
+                  poi.message.length > 80
+                      ? '${poi.message.substring(0, 80)}...'
+                      : poi.message,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[700],
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+ 
+              // Titre motifs
+              const Text(
+                'Sélectionnez les motifs (plusieurs possibles) :',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+ 
+              // Liste des motifs avec cases à cocher
+              ...motifs.map((motif) => CheckboxListTile(
+                    value: motifsSelectionnes.contains(motif),
+                    onChanged: (checked) {
+                      setStateDialog(() {
+                        if (checked == true) {
+                          motifsSelectionnes.add(motif);
+                        } else {
+                          motifsSelectionnes.remove(motif);
+                        }
+                      });
+                    },
+                    title: Text(
+                      motif,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  )),
+ 
+              const SizedBox(height: 16),
+ 
+              // Commentaire facultatif
+              const Text(
+                'Commentaire (facultatif) :',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: commentaireController,
+                decoration: InputDecoration(
+                  hintText: 'Précisions supplémentaires...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  contentPadding: const EdgeInsets.all(10),
+                ),
+                maxLines: 3,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: motifsSelectionnes.isEmpty
+                ? null // Désactivé si aucun motif sélectionné
+                : () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: Colors.grey[300],
+            ),
+            child: const Text('Rejeter et notifier'),
+          ),
+        ],
+      ),
+    ),
+  );
+ 
+  if (confirme != true) return;
+ 
+  try {
+    // 4. Repasser le POI en initiated
+    await _poiRepository.mettreAJourPoi(poi.id, {'status': 'initiated'});
+ 
+    // 5. Récupérer email et pseudo de l'auteur
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(poi.creatorUid)
+        .get();
+    final email  = userDoc.data()?['email']  as String?;
+    final pseudo = userDoc.data()?['pseudo'] as String? ?? 'Utilisateur';
+ 
+    // 6. Envoyer l'email si disponible
+    if (email != null && email.isNotEmpty) {
+      await MailService.envoyerEmailRejet(
+        emailDestinataire:    email,
+        pseudoDestinataire:   pseudo,
+        messagePoiApercu:     poi.message,
+        motifsSelectionnes:   motifsSelectionnes.toList(),
+        commentaire:          commentaireController.text.trim(),
+      );
+    }
+ 
+    // 7. Recharger les POIs
+    await _chargerPois(); // ← map_screen.dart
+    setState(() {}); // Forcer le rafraîchissement visuel
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            email != null && email.isNotEmpty
+                ? 'Anecdote rejetée · $pseudo notifié par email ✓'
+                : 'Anecdote rejetée (email non disponible)',
+          ),
+        ),
+      );
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur : $e')),
+      );
+    }
+  }
+}
+
 
   @override
 @override

@@ -99,7 +99,10 @@ Future<void> _signUp() async {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .set({'pseudo': pseudo}, SetOptions(merge: true));
+          .set({
+            'pseudo': pseudo,
+            'email': _emailController.text.trim(),
+          }, SetOptions(merge: true));
 
       // Réserver le pseudo dans la collection pseudos
       await FirebaseFirestore.instance

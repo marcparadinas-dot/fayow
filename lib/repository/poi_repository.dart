@@ -89,4 +89,14 @@ Future<List<PointInteret>> chargerTousPoisProposed() async {
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
+
+  Future<String?> chargerEmailUtilisateur(String uid) async {
+  try {
+    final doc = await _db.collection('users').doc(uid).get();
+    return doc.data()?['email'] as String?;
+  } catch (e) {
+    print('Erreur chargerEmailUtilisateur : $e');
+    return null;
+  }
+}
 }

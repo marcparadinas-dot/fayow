@@ -253,11 +253,21 @@ Future<void> _sauvegarderEmail(String nouvelEmail) async {
       'targetUid': uid,
       'newEmail': nouvelEmail,
     });
+final result = await callable.call({
+  'targetUid': uid,
+  'newEmail': nouvelEmail,
+});
 
-    setState(() {
-      _email = nouvelEmail;
-      _isLoading = false;
-    });
+// Mettre à jour l'email dans Firestore pour la cohérence
+await FirebaseFirestore.instance
+    .collection('users')
+    .doc(uid)
+    .update({'email': nouvelEmail});
+
+setState(() {
+  _email = nouvelEmail;
+  _isLoading = false;
+});
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
