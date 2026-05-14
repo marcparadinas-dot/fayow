@@ -1016,8 +1016,20 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
     }
  
     // 7. Recharger les POIs
-    await _chargerPois(); // ← map_screen.dart
-    setState(() {}); // Forcer le rafraîchissement visuel
+    final index = _pointsInteret.indexWhere((p) => p.id == poi.id);
+    if (index != -1) {
+      setState(() {
+        _pointsInteret[index] = PointInteret(
+          id: poi.id,
+          position: poi.position,
+          message: poi.message,
+          status: PoiStatus.initiated,
+          creatorUid: poi.creatorUid,
+        );
+      });
+    }
+    await _chargerPois();
+    //setState(() {}); // Forcer le rafraîchissement visuel
     
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
