@@ -1179,9 +1179,9 @@ Widget build(BuildContext context) {
         const SizedBox(width: 4),
           Expanded(
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
               if (_currentPosition == null) return;
-                Navigator.push(
+                await Navigator.push(
                   context,
                    MaterialPageRoute(
                      builder: (_) => ParcourirScreen(
@@ -1191,6 +1191,8 @@ Widget build(BuildContext context) {
                      ),
                    ),
                );
+                   // Recharger les POIs au retour de ParcourirScreen
+              await _chargerPois();
               },
               style: ElevatedButton.styleFrom(
               backgroundColor: const Color.fromRGBO(18, 119, 63, 1).withOpacity(0.85),
