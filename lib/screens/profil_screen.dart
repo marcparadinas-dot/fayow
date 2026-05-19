@@ -455,7 +455,7 @@ setState(() {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('POIs lus'),
+                              const Text('Anecdotes découvertes'),
                               Text(
                                 '${_pourcentageLus.toStringAsFixed(1)} %',
                                 style: const TextStyle(fontWeight: FontWeight.bold),

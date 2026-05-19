@@ -342,21 +342,24 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     }
   }
 
-  void _afficherDialogTexte(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Anecdote'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fermer'),
-          ),
-        ],
+void _afficherDialogTexte(String message) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Anecdote'),
+      // On enveloppe le texte dans un SingleChildScrollView
+      content: SingleChildScrollView(
+        child: Text(message),
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+      ],
+    ),
+  );
+}
 
   void _afficherDialogEdition(PointInteret poi) {
     final textController = TextEditingController(text: poi.message);
