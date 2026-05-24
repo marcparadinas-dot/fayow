@@ -1,4 +1,4 @@
-package com.example.fayow
+package site.fayow.app
 
 import io.flutter.embedding.android.FlutterActivity
 
