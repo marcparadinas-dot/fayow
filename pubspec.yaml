@@ -1,7 +1,9 @@
 name: fayow
 description: FaYoW - Points d'intérêt géolocalisés
+
 publish_to: none
-version: 1.0.0+6
+
+version: 1.0.0+7
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -10,11 +12,11 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase
-  firebase_core: ^3.6.0
-  firebase_auth: ^5.3.0
-  cloud_firestore: ^5.4.0
-  cloud_functions: ^5.6.2
+  # Firebase — versions downgradées pour compatibilité iOS (Xcode 14 / Monterey)
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.19.0
+  cloud_firestore: ^4.17.0
+  cloud_functions: ^4.7.6
 
   # Carte
   flutter_map: ^6.1.0
@@ -30,17 +32,19 @@ dependencies:
   # Permissions
   permission_handler: ^11.3.0
 
-  # Foreground Service
+  # Foreground Service (Android uniquement — conditionné dans le code)
   flutter_foreground_task: ^8.15.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
+
   assets:
     - assets/images/fayow_bandeau_haut.png
     - assets/images/fayow_bandeau_bas.png

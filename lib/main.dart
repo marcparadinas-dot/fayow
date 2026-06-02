@@ -1,7 +1,7 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'firebase_options.dart';
 import 'screens/auth_screen.dart';
 import 'screens/map_screen.dart';
@@ -17,8 +17,11 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
-  ForegroundServiceManager.initialiser();
+    // Foreground service — Android uniquement
+  // Sur iOS, cette méthode est un no-op (voir foreground_service.dart)
+  if (Platform.isAndroid) {
+    await ForegroundServiceManager.initialiser();
+  }
   runApp(const FayowApp());
 }
 

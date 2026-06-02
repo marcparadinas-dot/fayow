@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'parcourir_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -19,8 +20,11 @@ import 'classement_screen.dart';
 import '../services/mail_service.dart';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
-import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+// → flutter_foreground_task n'est plus importé directement ici.
+//   Tout passe par ForegroundServiceManager (foreground_service.dart)
+//   qui contient les guards Platform.isAndroid.
+import 'package:flutter_compass/flutter_compass.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -37,59 +41,78 @@ class _MapScreenState extends State<MapScreen> {
   final CommuneService _communeService = CommuneService();
 
   LatLng? _currentPosition;
-  double _currentHeading = 0.0; // ← ajouter cette ligne
+  double _currentHeading = 0.0;
   bool _locationReady = false;
   bool _modeReaffichage = false;
   bool _poisCharges = false;
   List<PointInteret> _pointsInteret = [];
   Set<String> _poisLusIds = {};
-  Set<String> _poisValidesDeclenches = {};  // validated : marqués lus dans Firestore
-  Set<String> _poisProposesDeclenches = {}; // proposed : lus localement seulement
-  // Ajoutez cette propriété en haut avec les autres
+  Set<String> _poisValidesDeclenches = {};
+  Set<String> _poisProposesDeclenches = {};
   StreamSubscription<Position>? _locationSubscription;
   late bool _isModerator;
-  // Seuil de déclenchement en mètres
   static const double _seuilMetres = 20.0;
 
-@override
-void initState() {
-  super.initState();
-  ForegroundServiceManager.initialiser();
-  ForegroundServiceManager.demarrer(); // ← direct, plus besoin de _demarrerService()
-  FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
-  _ttsService.initialiser();
-  _communeService.initialiser(_ttsService.tts);
-  _isModerator = AuthService.isModerator;
-  _initLocation();
-  FlutterCompass.events!.listen((CompassEvent event) {
-    if (!mounted) return;
-    if (event.heading != null) {
-      setState(() {
-        _currentHeading = event.heading!;
+  @override
+  void initState() {
+    super.initState();
+
+    // Foreground service — Android uniquement (no-op sur iOS via ForegroundServiceManager)
+    ForegroundServiceManager.initialiser();
+    ForegroundServiceManager.demarrer();
+
+    // Callback foreground task — Android uniquement
+    if (Platform.isAndroid) {
+      FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
+    }
+
+    _ttsService.initialiser();
+    _communeService.initialiser(_ttsService.tts);
+    _isModerator = AuthService.isModerator;
+    _initLocation();
+
+    // flutter_compass — iOS uniquement
+    // Sur Android, le heading vient du foreground task via _onReceiveTaskData
+    if (Platform.isIOS) {
+      FlutterCompass.events?.listen((CompassEvent event) {
+        if (!mounted) return;
+        if (event.heading != null) {
+          setState(() {
+            _currentHeading = event.heading!;
+          });
+        }
       });
     }
-  });
-  _chargerPois();
-}
 
-void _onReceiveTaskData(Object data) {
-  if (data is Map<String, dynamic>) {
-    final lat = data['lat'] as double;
-    final lng = data['lng'] as double;
-    final position = LatLng(lat, lng);
-    _verifierProximite(position);
+    _chargerPois();
   }
-}
 
-@override
-void dispose() {
-  FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
-  _locationSubscription?.cancel();
-  _ttsService.dispose();
-  ForegroundServiceManager.arreter();
-  _communeService.dispose();
-  super.dispose();
-}
+  void _onReceiveTaskData(Object data) {
+    // Ce callback n'est enregistré que sur Android (voir initState)
+    if (data is Map<String, dynamic>) {
+      final lat = data['lat'] as double;
+      final lng = data['lng'] as double;
+      final position = LatLng(lat, lng);
+      _verifierProximite(position);
+    }
+  }
+
+  @override
+  void dispose() {
+    // Callback foreground task — Android uniquement
+    if (Platform.isAndroid) {
+      FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
+    }
+
+    _locationSubscription?.cancel();
+    _ttsService.dispose();
+
+    // Arrêt du service — Android uniquement (no-op sur iOS)
+    ForegroundServiceManager.arreter();
+
+    _communeService.dispose();
+    super.dispose();
+  }
 
 Future<void> _chargerPois() async {
   final uid = FirebaseAuth.instance.currentUser?.uid;
