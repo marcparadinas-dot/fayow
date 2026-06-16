@@ -79,7 +79,7 @@ Future<void> verifierCommune({
       _derniereAnnonce = DateTime.now();
 
       // Récupérer le polygone via Nominatim
-      final polygone = await _obtenirPolygoneCommune(commune);
+      final polygone = await _obtenirPolygoneCommune(commune, latitude, longitude);
 
       if (polygone == null) {
         await _annoncerCommune(commune, null, null);
@@ -136,12 +136,18 @@ Future<void> verifierCommune({
   // Nominatim — polygone de la commune
   // -------------------------------------------------------------------------
 
-  Future<List<List<double>>?> _obtenirPolygoneCommune(String commune) async {
+  Future<List<List<double>>?> _obtenirPolygoneCommune(
+    String commune,
+    double latitude,
+    double longitude,
+  ) async {
     try {
       final nomEncoded = Uri.encodeComponent(commune);
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/search'
-        '?q=$nomEncoded&format=json&polygon_geojson=1&limit=1&countrycodes=fr',
+        '?q=$nomEncoded&format=json&polygon_geojson=1&limit=1'
+        '&viewbox=${longitude - 0.5},${latitude + 0.5},${longitude + 0.5},${latitude - 0.5}'
+       '&bounded=1',
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'FayowApp/1.0',
