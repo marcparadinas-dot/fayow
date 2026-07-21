@@ -60,7 +60,7 @@ jobs:
 
       - name: Build and sign IPA
         run: |
-	xcodebuild -workspace ios/Runner.xcworkspace \
+          xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
@@ -69,7 +69,6 @@ jobs:
             DEVELOPMENT_TEAM=U8M5VHA6GM \
             PROVISIONING_PROFILE_SPECIFIER="FaYoW App Store" \
             CODE_SIGN_IDENTITY="Apple Distribution"
-
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
             -exportPath $RUNNER_TEMP/ipa \
