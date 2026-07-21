@@ -41,6 +41,9 @@ post_install do |installer|
     flutter_additional_ios_build_settings(target)
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      # Supprimer le flag -G incompatible
+      config.build_settings['OTHER_CFLAGS'] = '$(inherited) -Wno-error'
+      config.build_settings['GCC_GENERATE_DEBUGGING_SYMBOLS'] = 'NO'
     end
   end
 end
