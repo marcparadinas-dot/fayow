@@ -53,13 +53,10 @@ jobs:
           cd ios
           pod install
           cd ..
-          # Patcher BoringSSL-GRPC pour supprimer le flag -G
-          find ios/Pods/BoringSSL-GRPC -name "*.podspec" -o -name "*.xcconfig" | xargs grep -l "\-G" 2>/dev/null | while read f; do
-            sed -i '' 's/-G[[:space:]]//g' "$f" 2>/dev/null || sed -i 's/-G[[:space:]]//g' "$f"
-          done
-          # Patcher aussi les xcconfig générés
-          find ios/Pods/Target\ Support\ Files/BoringSSL-GRPC -name "*.xcconfig" 2>/dev/null | while read f; do
+          # Patcher les xcconfig de BoringSSL-GRPC pour supprimer le flag -G
+          find "ios/Pods/Target Support Files/BoringSSL-GRPC" -name "*.xcconfig" | while read f; do
             sed -i 's/-G //g' "$f"
+            sed -i 's/-G\t//g' "$f"
           done
 
       - name: Build iOS
