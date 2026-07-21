@@ -66,6 +66,13 @@ jobs:
 
       - name: Build and sign IPA
         run: |
+          # Repatcher les xcconfig avant xcodebuild
+          BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
+          if [ -d "$BORING_DIR" ]; then
+            for f in "$BORING_DIR"/*.xcconfig; do
+              sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
+            done
+          fi
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -76,7 +83,8 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="FaYoW App Store" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
-            OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db"
+            OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db" \
+            GCC_WARN_INHIBIT_ALL_WARNINGS=NO
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
             -exportPath $RUNNER_TEMP/ipa \
