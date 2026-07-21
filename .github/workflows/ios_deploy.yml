@@ -50,9 +50,14 @@ jobs:
 
       - name: Install CocoaPods
         run: |
+          # Patcher le podspec BoringSSL-GRPC avant pod install
+          find $HOME/.cocoapods/repos -name "BoringSSL-GRPC.podspec.json" 2>/dev/null | while read f; do
+            sed -i '' 's/-G //g' "$f"
+          done
           cd ios
           pod install
           cd ..
+          # Patcher les xcconfig générés après pod install
           BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
           if [ -d "$BORING_DIR" ]; then
             for f in "$BORING_DIR"/*.xcconfig; do
@@ -60,6 +65,10 @@ jobs:
               sed -i '' 's/-G\t//g' "$f"
             done
           fi
+          # Patcher aussi le podspec dans ios/Pods
+          find ios/Pods -name "*.podspec" | while read f; do
+            sed -i '' 's/-G //g' "$f"
+          done
 
       - name: Build iOS
         run: |
