@@ -6,7 +6,7 @@
   <string>app-store</string>
   <key>provisioningProfiles</key>
   <dict>
-    <key>fr.marcparadinas.fayow</key>
+    <key>fr.armandisparca.fayow</key>
     <string>FaYoW App Store</string>
   </dict>
   <key>signingCertificate</key>
