@@ -50,17 +50,22 @@ jobs:
 
       - name: Generate Flutter build files
         run: |
-          # Générer les fichiers Flutter sans compiler iOS
           flutter build ios --release --no-codesign --config-only 2>/dev/null || true
           cd ios
           pod install
           cd ..
-          # Patcher BoringSSL-GRPC maintenant que pod install est terminé
+          # Patcher le pbxproj des Pods pour supprimer GCC_WARN_INHIBIT_ALL_WARNINGS
+          PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
+          if [ -f "$PODS_PBXPROJ" ]; then
+            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
+            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES//g' "$PODS_PBXPROJ"
+            echo "Patched Pods.xcodeproj/project.pbxproj"
+          fi
+          # Patcher aussi les xcconfig
           BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
           if [ -d "$BORING_DIR" ]; then
             for f in "$BORING_DIR"/*.xcconfig; do
               sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
-              echo "Patched $f"
             done
           fi
 
