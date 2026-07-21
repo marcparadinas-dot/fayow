@@ -48,34 +48,21 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: Install CocoaPods and patch BoringSSL-GRPC
+      - name: Generate Flutter build files
         run: |
+          # Générer les fichiers Flutter sans compiler iOS
+          flutter build ios --release --no-codesign --config-only 2>/dev/null || true
           cd ios
           pod install
           cd ..
-          # Patcher les sources C/C++ de BoringSSL-GRPC directement
-          find ios/Pods/BoringSSL-GRPC -name "*.c" -o -name "*.cc" -o -name "*.cpp" | head -5
-          # Patcher les xcconfig
+          # Patcher BoringSSL-GRPC maintenant que pod install est terminé
           BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
           if [ -d "$BORING_DIR" ]; then
             for f in "$BORING_DIR"/*.xcconfig; do
               sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
-              echo "Patched: $f"
-              cat "$f" | grep -i "GCC_WARN" || echo "No GCC_WARN found"
+              echo "Patched $f"
             done
           fi
-
-      - name: Build iOS
-        run: |
-          # Repatcher après le pod install de flutter
-          cd ios && pod install && cd ..
-          BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
-          if [ -d "$BORING_DIR" ]; then
-            for f in "$BORING_DIR"/*.xcconfig; do
-              sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
-            done
-          fi
-          flutter build ios --release --no-codesign
 
       - name: Build and sign IPA
         run: |
