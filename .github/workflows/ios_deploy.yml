@@ -51,30 +51,16 @@ jobs:
       - name: Generate Flutter build files
         run: |
           flutter build ios --release --no-codesign --config-only 2>/dev/null || true
-          # Patcher le podspec BoringSSL-GRPC dans le cache CocoaPods
-          PODSPEC=$(find $HOME/.cocoapods/repos -name "BoringSSL-GRPC.podspec.json" 2>/dev/null | head -1)
-          if [ -n "$PODSPEC" ]; then
-            echo "Patching $PODSPEC"
-            sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$PODSPEC"
-          fi
-          # Patcher aussi dans ios/Pods si déjà téléchargé
-          find ios/Pods/BoringSSL-GRPC -name "*.podspec.json" 2>/dev/null | while read f; do
-            sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
-          done
           cd ios
           pod install
           cd ..
-          # Patcher les xcconfig générés
-          BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
-          if [ -d "$BORING_DIR" ]; then
-            for f in "$BORING_DIR"/*.xcconfig; do
-              sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
-            done
-          fi
-          # Patcher le pbxproj
+          # Patcher COMPILER_FLAGS dans project.pbxproj
           PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
           if [ -f "$PODS_PBXPROJ" ]; then
-            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
+            sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS //g' "$PODS_PBXPROJ"
+            sed -i '' 's/ -GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$PODS_PBXPROJ"
+            echo "Patched project.pbxproj"
+            grep "GCC_WARN_INHIBIT" "$PODS_PBXPROJ" | head -3 || echo "Flag supprimé avec succès"
           fi
 
       - name: Debug BoringSSL config
