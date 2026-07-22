@@ -71,13 +71,22 @@ jobs:
 
       - name: Build and sign IPA
         run: |
-          # Repatcher les xcconfig avant xcodebuild
           BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
           if [ -d "$BORING_DIR" ]; then
             for f in "$BORING_DIR"/*.xcconfig; do
               sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS//g' "$f"
             done
           fi
+          PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
+          if [ -f "$PODS_PBXPROJ" ]; then
+            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
+            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES//g' "$PODS_PBXPROJ"
+          fi
+          # Vérification
+          echo "=== Contenu xcconfig BoringSSL ==="
+          cat "ios/Pods/Target Support Files/BoringSSL-GRPC/BoringSSL-GRPC.release.xcconfig" 2>/dev/null || echo "Fichier non trouvé"
+          echo "=== GCC_WARN dans pbxproj ==="
+          grep "GCC_WARN_INHIBIT" "$PODS_PBXPROJ" | head -5 || echo "Non trouvé"
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
