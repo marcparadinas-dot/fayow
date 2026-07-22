@@ -77,6 +77,13 @@ jobs:
             sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
           fi
 
+      - name: Debug BoringSSL config
+        run: |
+          echo "=== GCC_WARN dans pbxproj ==="
+          grep -n "GCC_WARN_INHIBIT" ios/Pods/Pods.xcodeproj/project.pbxproj | head -20
+          echo "=== OTHER_CFLAGS BoringSSL ==="
+          grep -n -A2 -B2 "GCC_WARN_INHIBIT" ios/Pods/Pods.xcodeproj/project.pbxproj | grep -A5 -B5 "BoringSSL" | head -30
+
       - name: Build and sign IPA
         run: |
           BORING_DIR="ios/Pods/Target Support Files/BoringSSL-GRPC"
