@@ -83,13 +83,7 @@ jobs:
           PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
           if [ -f "$PODS_PBXPROJ" ]; then
             sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
-            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES//g' "$PODS_PBXPROJ"
           fi
-          # Vérification
-          echo "=== Contenu xcconfig BoringSSL ==="
-          cat "ios/Pods/Target Support Files/BoringSSL-GRPC/BoringSSL-GRPC.release.xcconfig" 2>/dev/null || echo "Fichier non trouvé"
-          echo "=== GCC_WARN dans pbxproj ==="
-          grep "GCC_WARN_INHIBIT" "$PODS_PBXPROJ" | head -5 || echo "Non trouvé"
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -102,32 +96,17 @@ jobs:
             -allowProvisioningUpdates \
             OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db" \
             GCC_WARN_INHIBIT_ALL_WARNINGS=NO
+          # Patcher App.framework avant l'export
+          PLIST="$RUNNER_TEMP/Runner.xcarchive/Products/Applications/Runner.app/Frameworks/App.framework/Info.plist"
+          if [ -f "$PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 13.0" "$PLIST"
+            echo "Patched MinimumOSVersion"
+          fi
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
             -exportPath $RUNNER_TEMP/ipa \
             -exportOptionsPlist ios/ExportOptions.plist
-
-      - name: Fix App.framework MinimumOSVersion
-        run: |
-          APP_FRAMEWORK="$RUNNER_TEMP/ipa/fayow.ipa"
-          # Extraire l'IPA, patcher, recompresser
-          cd $RUNNER_TEMP
-          mkdir -p ipa_extracted
-          cd ipa_extracted
-          unzip -q "$APP_FRAMEWORK"
-          # Trouver et patcher le Info.plist de App.framework
-          PLIST="Payload/Runner.app/Frameworks/App.framework/Info.plist"
-          if [ -f "$PLIST" ]; then
-            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 13.0" "$PLIST"
-            echo "Patched MinimumOSVersion in App.framework"
-          else
-            echo "PLIST non trouvé : $PLIST"
-            find . -name "Info.plist" | head -10
-          fi
-          # Recompresser
-          zip -qr $RUNNER_TEMP/ipa/fayow.ipa .
-          cd $RUNNER_TEMP
 
       - name: Upload to App Store Connect
         env:
