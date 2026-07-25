@@ -107,6 +107,28 @@ jobs:
             -exportPath $RUNNER_TEMP/ipa \
             -exportOptionsPlist ios/ExportOptions.plist
 
+      - name: Fix App.framework MinimumOSVersion
+        run: |
+          APP_FRAMEWORK="$RUNNER_TEMP/ipa/fayow.ipa"
+          # Extraire l'IPA, patcher, recompresser
+          cd $RUNNER_TEMP
+          mkdir -p ipa_extracted
+          cd ipa_extracted
+          unzip -q "$APP_FRAMEWORK"
+          # Trouver et patcher le Info.plist de App.framework
+          PLIST="Payload/Runner.app/Frameworks/App.framework/Info.plist"
+          if [ -f "$PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 13.0" "$PLIST"
+            echo "Patched MinimumOSVersion in App.framework"
+          else
+            echo "PLIST non trouvé : $PLIST"
+            find . -name "Info.plist" | head -10
+          fi
+          # Recompresser
+          zip -qr $RUNNER_TEMP/ipa/fayow.ipa .
+          cd $RUNNER_TEMP
+
       - name: Upload to App Store Connect
         env:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
