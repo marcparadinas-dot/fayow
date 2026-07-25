@@ -51,6 +51,8 @@ jobs:
       - name: Generate Flutter build files
         run: |
           flutter build ios --release --no-codesign --config-only 2>/dev/null || true
+          # Supprimer le Podfile.lock pour forcer une résolution fraîche
+          rm -f ios/Podfile.lock
           cd ios
           pod install
           cd ..
