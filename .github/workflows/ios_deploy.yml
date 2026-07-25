@@ -123,6 +123,6 @@ jobs:
           # Upload
           xcrun altool --upload-app \
             --type ios \
-            --file $RUNNER_TEMP/ipa/Runner.ipa \
+            --file $RUNNER_TEMP/ipa/fayow.ipa \
             --apiKey $APP_STORE_CONNECT_KEY_ID \
             --apiIssuer $APP_STORE_CONNECT_ISSUER_ID
