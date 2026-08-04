@@ -3,6 +3,7 @@ name: iOS Deploy to App Store
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
