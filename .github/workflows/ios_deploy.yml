@@ -3,6 +3,7 @@ name: iOS Deploy to App Store
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -39,9 +40,9 @@ jobs:
           security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
-      - name: Install provisioning profile
+      - name: Install Ad Hoc provisioning profile
         env:
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_ADHOC_BASE64 }}
         run: |
           PP_PATH=$RUNNER_TEMP/profile.mobileprovision
           echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
@@ -51,12 +52,10 @@ jobs:
       - name: Generate Flutter build files
         run: |
           flutter build ios --release --no-codesign --config-only 2>/dev/null || true
-          # Supprimer le Podfile.lock pour forcer une résolution fraîche
           rm -f ios/Podfile.lock
           cd ios
           pod install
           cd ..
-          # Patcher COMPILER_FLAGS dans project.pbxproj
           PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
           if [ -f "$PODS_PBXPROJ" ]; then
             sed -i '' 's/-GCC_WARN_INHIBIT_ALL_WARNINGS //g' "$PODS_PBXPROJ"
@@ -91,12 +90,11 @@ jobs:
             archive \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM=U8M5VHA6GM \
-            PROVISIONING_PROFILE_SPECIFIER="FaYoW App Store" \
+            PROVISIONING_PROFILE_SPECIFIER="FaYoW AdHoc Test" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             -allowProvisioningUpdates \
             OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db" \
             GCC_WARN_INHIBIT_ALL_WARNINGS=NO
-          # Patcher App.framework avant l'export
           PLIST="$RUNNER_TEMP/Runner.xcarchive/Products/Applications/Runner.app/Frameworks/App.framework/Info.plist"
           if [ -f "$PLIST" ]; then
             /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
@@ -106,24 +104,11 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
             -exportPath $RUNNER_TEMP/ipa \
-            -exportOptionsPlist ios/ExportOptions.plist
+            -exportOptionsPlist ios/ExportOptions-adhoc.plist
 
-      - name: Upload to App Store Connect
-        env:
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.appstoreconnect/private_keys
-          echo "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8
-          # Debug — trouver le fichier IPA
-          echo "=== Contenu de RUNNER_TEMP/ipa ==="
-          ls -la $RUNNER_TEMP/ipa/ 2>/dev/null || echo "Dossier ipa non trouvé"
-          echo "=== Recherche IPA ==="
-          find $RUNNER_TEMP -name "*.ipa" 2>/dev/null || echo "Aucun IPA trouvé"
-          # Upload
-          xcrun altool --upload-app \
-            --type ios \
-            --file $RUNNER_TEMP/ipa/fayow.ipa \
-            --apiKey $APP_STORE_CONNECT_KEY_ID \
-            --apiIssuer $APP_STORE_CONNECT_ISSUER_ID
+      - name: Upload IPA as downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fayow-adhoc-diagnostic
+          path: ${{ runner.temp }}/ipa/*.ipa
+          retention-days: 7
