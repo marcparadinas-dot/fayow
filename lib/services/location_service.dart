@@ -18,23 +18,30 @@ class LocationService {
       if (!backgroundStatus.isGranted && context.mounted) {
         await showDialog(
           context: context,
+          barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            title: const Text("Autoriser en permanence"),
+            title: const Text("Localisation en arrière-plan"),
             content: const Text(
-              "Dans l'écran suivant, sélectionnez 'Toujours autoriser' "
-              "pour que FaYoW puisse vous alerter même quand l'écran est éteint."
+              "FaYoW souhaite accéder à votre position, y compris lorsque "
+              "l'application est fermée ou en arrière-plan, afin de vous "
+              "notifier des points d'intérêt géolocalisés à proximité dès "
+              "qu'ils apparaissent sur votre trajet.\n\n"
+              "Cette donnée n'est jamais partagée avec des tiers ni utilisée "
+              "à d'autres fins.\n\n"
+              "Si vous acceptez, l'écran suivant vous demandera de sélectionner "
+              "'Toujours autoriser'."
             ),
             actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text("Refuser"),
+              ),
               TextButton(
                 onPressed: () async {
                   Navigator.pop(ctx);
                   await Permission.locationAlways.request();
                 },
-                child: const Text("OK"),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text("Annuler"),
+                child: const Text("Accepter"),
               ),
             ],
           ),
