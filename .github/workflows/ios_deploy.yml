@@ -3,6 +3,7 @@ name: iOS Deploy to App Store
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -51,6 +52,8 @@ jobs:
       - name: Generate Flutter build files
         run: |
           flutter build ios --release --no-codesign --config-only 2>/dev/null || true
+          # Supprimer le Podfile.lock pour forcer une résolution fraîche
+          rm -f ios/Podfile.lock
           cd ios
           pod install
           cd ..
@@ -81,13 +84,7 @@ jobs:
           PODS_PBXPROJ="ios/Pods/Pods.xcodeproj/project.pbxproj"
           if [ -f "$PODS_PBXPROJ" ]; then
             sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES;//g' "$PODS_PBXPROJ"
-            sed -i '' 's/GCC_WARN_INHIBIT_ALL_WARNINGS = YES//g' "$PODS_PBXPROJ"
           fi
-          # Vérification
-          echo "=== Contenu xcconfig BoringSSL ==="
-          cat "ios/Pods/Target Support Files/BoringSSL-GRPC/BoringSSL-GRPC.release.xcconfig" 2>/dev/null || echo "Fichier non trouvé"
-          echo "=== GCC_WARN dans pbxproj ==="
-          grep "GCC_WARN_INHIBIT" "$PODS_PBXPROJ" | head -5 || echo "Non trouvé"
           xcodebuild -workspace ios/Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
@@ -100,6 +97,13 @@ jobs:
             -allowProvisioningUpdates \
             OTHER_CODE_SIGN_FLAGS="--keychain $RUNNER_TEMP/app-signing.keychain-db" \
             GCC_WARN_INHIBIT_ALL_WARNINGS=NO
+          # Patcher App.framework avant l'export
+          PLIST="$RUNNER_TEMP/Runner.xcarchive/Products/Applications/Runner.app/Frameworks/App.framework/Info.plist"
+          if [ -f "$PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 13.0" "$PLIST"
+            echo "Patched MinimumOSVersion"
+          fi
           xcodebuild -exportArchive \
             -archivePath $RUNNER_TEMP/Runner.xcarchive \
             -exportPath $RUNNER_TEMP/ipa \
@@ -111,8 +115,16 @@ jobs:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8
+          # Debug — trouver le fichier IPA
+          echo "=== Contenu de RUNNER_TEMP/ipa ==="
+          ls -la $RUNNER_TEMP/ipa/ 2>/dev/null || echo "Dossier ipa non trouvé"
+          echo "=== Recherche IPA ==="
+          find $RUNNER_TEMP -name "*.ipa" 2>/dev/null || echo "Aucun IPA trouvé"
+          # Upload
           xcrun altool --upload-app \
             --type ios \
-            --file $RUNNER_TEMP/ipa/Runner.ipa \
+            --file $RUNNER_TEMP/ipa/fayow.ipa \
             --apiKey $APP_STORE_CONNECT_KEY_ID \
             --apiIssuer $APP_STORE_CONNECT_ISSUER_ID
