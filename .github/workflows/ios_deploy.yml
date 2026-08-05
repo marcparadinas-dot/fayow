@@ -64,6 +64,9 @@ jobs:
             grep "GCC_WARN_INHIBIT" "$PODS_PBXPROJ" | head -3 || echo "Flag supprimé avec succès"
           fi
 
+      - name: Afficher le contenu de GeneratedPluginRegistrant
+        run: cat ios/Runner/GeneratedPluginRegistrant.m
+
       - name: Debug BoringSSL config
         run: |
           echo "=== GCC_WARN dans pbxproj ==="
