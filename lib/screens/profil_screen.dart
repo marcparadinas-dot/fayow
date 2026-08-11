@@ -324,6 +324,80 @@ setState(() {
   }
 
   // -------------------------------------------------------------------------
+  // Suppression du compte
+  // -------------------------------------------------------------------------
+
+  Future<void> _supprimerCompte() async {
+    final confirme = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer mon compte'),
+        content: const Text(
+          'Cette action est définitive. Votre profil, votre pseudo et '
+          'votre historique d\'anecdotes lues seront supprimés '
+          'immédiatement et ne pourront pas être récupérés.\n\n'
+          'Confirmez-vous la suppression ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Supprimer définitivement'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirme != true) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      await user.getIdToken(true);
+      final uid = user.uid;
+
+      final functionsInstance =
+          FirebaseFunctions.instanceFor(region: 'us-central1');
+      final callable = functionsInstance.httpsCallable('deleteUserAccount');
+      await callable.call({'targetUid': uid});
+
+      // Le compte Auth a été supprimé côté serveur : on nettoie
+      // simplement la session locale et on revient à l'écran de connexion.
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const AuthScreen()),
+          (route) => false,
+        );
+      }
+    } on FirebaseFunctionsException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : ${e.message}')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e')),
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Build
   // -------------------------------------------------------------------------
 
@@ -509,7 +583,7 @@ setState(() {
                   ),
                   const SizedBox(height: 24),
 
-                  // Bouton déconnexion
+         // Bouton déconnexion
                   ElevatedButton.icon(
                     onPressed: _signOut,
                     icon: const Icon(Icons.logout),
@@ -517,6 +591,20 @@ setState(() {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red,
                       foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _supprimerCompte,
+                    icon: const Icon(Icons.delete_forever, color: Colors.red),
+                    label: const Text('Supprimer mon compte',
+                        style: TextStyle(color: Colors.red)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
