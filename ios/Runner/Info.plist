@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Utilisé pour orienter le pointeur</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>FaYoW utilise votre position pour vous signaler les anecdotes disponibles à proximité pendant que l'application est ouverte.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
