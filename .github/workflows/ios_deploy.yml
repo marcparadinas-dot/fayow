@@ -20,6 +20,12 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+        
+      - name: Generate local config
+        env:
+          CARTO_API_KEY: ${{ secrets.CARTO_API_KEY }}
+        run: |
+          echo "const String cartoApiKey = '$CARTO_API_KEY';" > lib/config_local.dart
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
