@@ -748,7 +748,7 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
           children: [
             TileLayer(
               urlTemplate:
-                  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
               subdomains: const ['a', 'b', 'c', 'd'],
               userAgentPackageName: 'com.example.fayow',
             ),
