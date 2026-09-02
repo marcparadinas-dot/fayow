@@ -287,9 +287,6 @@ Future<void> _declencherPoiValide(PointInteret poi, String uid) async {
         .set({'readAt': FieldValue.serverTimestamp()});
     if (mounted) {
       setState(() { _poisLusIds.add(poi.id); });
-// Mettre à jour le score
-ScoreService.incrementerPoisLus(uid);
-
     }
   } catch (e) {
     print('Erreur marquage POI lu : $e');

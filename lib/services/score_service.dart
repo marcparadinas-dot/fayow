@@ -1,11 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ScoreService {
   static final _db = FirebaseFirestore.instance;
 
   // -------------------------------------------------------------------------
   // Points par action
+  //
+  // NB : le calcul incrémental du score (à la lecture d'une anecdote, ou au
+  // changement de statut d'un POI) est désormais géré côté serveur par les
+  // Cloud Functions recalculerScoreSurLecture et
+  // recalculerScoreSurChangementStatut (voir functions/index.js), qui se
+  // déclenchent automatiquement sur l'écriture Firestore correspondante —
+  // que ce soit depuis l'appli ou depuis l'interface modérateur. Ces
+  // constantes ne servent donc plus qu'à recalculerScore() ci-dessous.
   // -------------------------------------------------------------------------
   static const int pointsPoiLu       = 1;
   static const int pointsPoiInitiated = 2;
@@ -41,6 +48,10 @@ class ScoreService {
 
   // -------------------------------------------------------------------------
   // Recalcul complet depuis Firestore (pour le passé et les corrections)
+  //
+  // Reste utile comme filet de sécurité ponctuel (ex. après une migration
+  // de données), même si les Cloud Functions maintiennent normalement le
+  // score à jour en continu.
   // -------------------------------------------------------------------------
 
   static Future<void> recalculerScore(String uid) async {
@@ -87,74 +98,6 @@ class ScoreService {
       print('ScoreService : score recalculé pour $uid → $total points');
     } catch (e) {
       print('Erreur recalcul score : $e');
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // Mises à jour incrémentales
-  // -------------------------------------------------------------------------
-
-  /// Appelé quand un POI validé est lu
-  static Future<void> incrementerPoisLus(String uid) async {
-    try {
-      await _db.collection('users').doc(uid).update({
-        'score.poisLus': FieldValue.increment(1),
-        'score.total':   FieldValue.increment(pointsPoiLu),
-      });
-    } catch (e) {
-      print('Erreur incrementerPoisLus : $e');
-    }
-  }
-
-  /// Appelé quand un POI passe à un nouveau statut
-  /// [ancienStatut] peut être null si c'est une création
-  static Future<void> mettreAJourStatutPoi(
-    String uid, {
-    String? ancienStatut,
-    required String nouveauStatut,
-  }) async {
-    try {
-      final Map<String, dynamic> updates = {};
-
-      // Retirer les points de l'ancien statut
-      if (ancienStatut != null) {
-        switch (ancienStatut) {
-          case 'initiated':
-            updates['score.poisInitiated'] = FieldValue.increment(-1);
-            updates['score.total'] = FieldValue.increment(-pointsPoiInitiated);
-            break;
-          case 'proposed':
-            updates['score.poisProposed'] = FieldValue.increment(-1);
-            updates['score.total'] = FieldValue.increment(-pointsPoiProposed);
-            break;
-          case 'validated':
-            updates['score.poisValidated'] = FieldValue.increment(-1);
-            updates['score.total'] = FieldValue.increment(-pointsPoiValidated);
-            break;
-        }
-      }
-
-      // Ajouter les points du nouveau statut
-      switch (nouveauStatut) {
-        case 'initiated':
-          updates['score.poisInitiated'] = FieldValue.increment(1);
-          updates['score.total'] = FieldValue.increment(pointsPoiInitiated);
-          break;
-        case 'proposed':
-          updates['score.poisProposed'] = FieldValue.increment(1);
-          updates['score.total'] = FieldValue.increment(pointsPoiProposed);
-          break;
-        case 'validated':
-          updates['score.poisValidated'] = FieldValue.increment(1);
-          updates['score.total'] = FieldValue.increment(pointsPoiValidated);
-          break;
-      }
-
-      if (updates.isNotEmpty) {
-        await _db.collection('users').doc(uid).update(updates);
-      }
-    } catch (e) {
-      print('Erreur mettreAJourStatutPoi : $e');
     }
   }
 
