@@ -50,7 +50,17 @@ flutter:
     - assets/images/fayow_bandeau_bas.png
     - assets/icon/fayow-Logo.png
 
+#flutter_launcher_icons:
+#  android: "launcher_icon"
+#  ios: true
+#  image_path: "assets/icon/fayow-logo.png"
+
 flutter_launcher_icons:
-  android: "launcher_icon"
-  ios: true
+  # Configuration globale / iOS
   image_path: "assets/icon/fayow-logo.png"
+  ios: true
+
+  # Configuration spécifique Android (Icône adaptative)
+  android: true
+  adaptive_icon_background: "assets/icon/fayow-logo1.png" # Ou un code couleur ex: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/fayow-logo2.png" 
