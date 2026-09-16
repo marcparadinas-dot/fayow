@@ -43,6 +43,26 @@ function pointsPourStatut(status) {
   return POINTS[status] || 0;
 }
 
+// ---------------------------------------------------------------------------
+// Un utilisateur avec masquerDuClassement: true dans son document users/{uid}
+// n'apparaît plus dans le classement — géré simplement en ne mettant jamais
+// à jour son champ score.total, dont l'absence exclut automatiquement le
+// document des résultats de chargerClassement() (orderBy('score.total')).
+// Les autres compteurs (poisLus, poisInitiated, etc.) continuent d'être mis
+// à jour normalement, pour ne rien perdre si le compte est démasqué plus
+// tard (il suffira alors d'appeler recalculerScore côté Flutter, ou de
+// remettre le champ total à la main, pour qu'il réapparaisse).
+// ---------------------------------------------------------------------------
+async function estMasqueDuClassement(uid) {
+  try {
+    const doc = await db.collection("users").doc(uid).get();
+    return doc.exists && doc.data().masquerDuClassement === true;
+  } catch (error) {
+    console.error(`Erreur lecture masquerDuClassement pour ${uid} :`, error.message);
+    return false; // en cas de doute, on ne masque pas.
+  }
+}
+
 // =============================================================================
 // deleteUserAccount
 // =============================================================================
@@ -171,11 +191,6 @@ exports.updateUserEmail = onCall(
 // changement de statut, ou suppression — peu importe si l'écriture vient de
 // l'appli Flutter ou de l'interface modérateur, puisque c'est Firestore
 // lui-même qui est observé.
-//
-// Logique unifiée : on retire les points de l'ancien statut (s'il y en avait
-// un et qu'il a changé) et on ajoute ceux du nouveau (s'il y en a un et qu'il
-// a changé), en un seul delta calculé côté serveur — ce qui évite le bug
-// d'écrasement qu'on avait côté Dart.
 // =============================================================================
 exports.recalculerScoreSurChangementStatut = onDocumentWritten(
   { document: "pois/{poiId}", region: "us-central1" },
@@ -218,7 +233,8 @@ exports.recalculerScoreSurChangementStatut = onDocumentWritten(
       deltaTotal += pointsPourStatut(afterStatus);
     }
 
-    if (deltaTotal !== 0) {
+    const masque = await estMasqueDuClassement(creatorUid);
+    if (deltaTotal !== 0 && !masque) {
       updates["score.total"] = admin.firestore.FieldValue.increment(deltaTotal);
     }
 
@@ -231,7 +247,7 @@ exports.recalculerScoreSurChangementStatut = onDocumentWritten(
       console.log(
         `Score mis à jour pour ${creatorUid} : ${beforeStatus || "(aucun)"} → ${
           afterStatus || "(aucun)"
-        } (Δtotal=${deltaTotal})`
+        } (Δtotal=${masque ? "ignoré (masqué)" : deltaTotal})`
       );
     } catch (error) {
       console.error(
@@ -253,12 +269,20 @@ exports.recalculerScoreSurLecture = onDocumentCreated(
   async (event) => {
     const uid = event.params.uid;
 
+    const updates = {
+      "score.poisLus": admin.firestore.FieldValue.increment(1),
+    };
+
+    const masque = await estMasqueDuClassement(uid);
+    if (!masque) {
+      updates["score.total"] = admin.firestore.FieldValue.increment(POINTS.lu);
+    }
+
     try {
-      await db.collection("users").doc(uid).update({
-        "score.poisLus": admin.firestore.FieldValue.increment(1),
-        "score.total": admin.firestore.FieldValue.increment(POINTS.lu),
-      });
-      console.log(`+${POINTS.lu} pt (lecture) pour ${uid}`);
+      await db.collection("users").doc(uid).update(updates);
+      console.log(
+        `+${POINTS.lu} pt (lecture) pour ${uid}${masque ? " — total ignoré (masqué)" : ""}`
+      );
     } catch (error) {
       console.error(`Erreur incrément lecture pour ${uid} :`, error.message);
     }

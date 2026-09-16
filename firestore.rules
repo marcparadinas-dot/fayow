@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isModerator() {
+      return request.auth != null
+        && request.auth.token.email in [
+          "marc.paradinas@gmail.com",
+          "marc.paradinas@wanadoo.fr"
+        ];
+    }
+    match /pois/{poiId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null
+        && (
+          request.auth.uid == resource.data.creatorUid
+          || isModerator()
+        );
+    }
+		match /users/{userId}/readPois/{poiId} {
+  		allow read: if request.auth != null &&
+    		(request.auth.uid == userId || isModerator());
+  		allow write: if request.auth != null && request.auth.uid == userId;
+		}
+    match /users/{userId} {
+      allow read: if request.auth != null || isModerator();
+      allow write: if (request.auth != null && request.auth.uid == userId)
+        || isModerator();
+    }
+    match /pseudos/{pseudoKey} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null
+        && (resource.data.uid == request.auth.uid || isModerator());
+      allow update: if isModerator();
+    }
+    
+    match /config/{docId} {
+  		allow read: if request.auth != null;
+  		allow write: if isModerator();
+		}
+    
+    match /mail/{docId} {
+  		allow read: if false;
+  		allow create: if request.auth != null;
+  		allow update, delete: if false;
+		}
+  }
+}

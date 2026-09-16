@@ -9,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/score_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
+import '../widgets/map_compass_button.dart';
 
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
@@ -36,6 +37,12 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   late List<PointInteret> _pointsInteret;
   late Set<String> _poisLusIds;
   late bool _isModerator;
+  Map<String, DateTime> _datesLecture = {};
+
+  // Anecdote à localiser : mémorisée car TabBarView reconstruit l'onglet
+  // Carte (et donc la FlutterMap) à chaque retour dessus.
+  LatLng? _cibleLocalisation;
+  static const double _zoomLocalisation = 18.0;
 
   // Déplacement en deux étapes
   bool _modeSelectionPosition = false;
@@ -48,6 +55,16 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     _pointsInteret = List.from(widget.pointsInteret);
     _poisLusIds = Set.from(widget.poisLusIds);
     _isModerator = AuthService.isModerator;
+    _chargerDatesLecture();
+  }
+
+  Future<void> _chargerDatesLecture() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final dates = await _poiRepository.chargerDatesLecture(uid);
+    if (mounted) {
+      setState(() => _datesLecture = dates);
+    }
   }
 
   @override
@@ -60,20 +77,28 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   // POIs visibles (filtrés selon le profil)
   // -------------------------------------------------------------------------
 
+  /// POIs affichés comme cercles sur la carte : tous les statuts, pour
+  /// tout le monde. Un utilisateur lambda voit un cercle gris sur un
+  /// validé non lu, mais sans accès à son texte (cf. _ouvrirDialogPoi).
   List<PointInteret> get _poisVisibles {
+    return List<PointInteret>.from(_pointsInteret);
+  }
+
+  /// POIs affichés dans l'onglet Liste (avec aperçu du texte) : on masque
+  /// les validés non lus aux non-modérateurs pour ne pas dévoiler le
+  /// contenu d'une anecdote avant que l'utilisateur ne se rende sur place.
+  List<PointInteret> get _poisListe {
     return _pointsInteret.where((poi) {
-      final estLu = _poisLusIds.contains(poi.id);
-      return switch (poi.status) {
-        PoiStatus.validated => estLu || _isModerator,
-        PoiStatus.initiated => true,
-        PoiStatus.proposed => true,
-      };
+      if (poi.status == PoiStatus.validated) {
+        return _poisLusIds.contains(poi.id) || _isModerator;
+      }
+      return true;
     }).toList();
   }
 
-  // POIs triés : validés lus, puis proposés, puis initiés
+  // POIs triés : validés lus (récent → ancien), puis proposés, puis initiés
   List<PointInteret> get _poisTries {
-    final liste = List<PointInteret>.from(_poisVisibles);
+    final liste = List<PointInteret>.from(_poisListe);
     liste.sort((a, b) {
       int ordreStatut(PointInteret p) {
         if (p.status == PoiStatus.validated && _poisLusIds.contains(p.id)) return 0;
@@ -82,7 +107,20 @@ class _ParcourirScreenState extends State<ParcourirScreen>
         if (p.status == PoiStatus.validated) return 3; // validés non lus (modérateur)
         return 4;
       }
-      return ordreStatut(a).compareTo(ordreStatut(b));
+
+      final ordreA = ordreStatut(a);
+      final ordreB = ordreStatut(b);
+      if (ordreA != ordreB) return ordreA.compareTo(ordreB);
+
+      // Parmi les anecdotes lues : la plus récemment découverte en premier
+      if (ordreA == 0) {
+        final dateA = _datesLecture[a.id];
+        final dateB = _datesLecture[b.id];
+        if (dateA != null && dateB != null) return dateB.compareTo(dateA);
+        if (dateA != null) return -1;
+        if (dateB != null) return 1;
+      }
+      return 0;
     });
     return liste;
   }
@@ -95,16 +133,13 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green.withOpacity(0.4);
     }
-    if (poi.status == PoiStatus.validated && _isModerator) {
-      return Colors.purple.withOpacity(0.3);
-    }
     switch (poi.status) {
       case PoiStatus.initiated:
         return Colors.orange.withOpacity(0.5);
       case PoiStatus.proposed:
-        return Colors.grey.withOpacity(0.5);
+        return Colors.blue[900]!.withOpacity(0.5);
       case PoiStatus.validated:
-        return Colors.transparent;
+        return Colors.grey.withOpacity(0.5);
     }
   }
 
@@ -112,16 +147,13 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green;
     }
-    if (poi.status == PoiStatus.validated && _isModerator) {
-      return Colors.purple;
-    }
     switch (poi.status) {
       case PoiStatus.initiated:
         return Colors.orange;
       case PoiStatus.proposed:
-        return Colors.grey;
+        return Colors.blue[900]!;
       case PoiStatus.validated:
-        return Colors.transparent;
+        return Colors.grey;
     }
   }
 
@@ -129,8 +161,8 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green;
     }
-    if (poi.status == PoiStatus.validated) return Colors.purple;
-    if (poi.status == PoiStatus.proposed) return Colors.grey;
+    if (poi.status == PoiStatus.validated) return Colors.grey;
+    if (poi.status == PoiStatus.proposed) return Colors.blue[900]!;
     return Colors.orange;
   }
 
@@ -330,26 +362,79 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   void _ouvrirDialogPoi(PointInteret poi) {
     switch (poi.status) {
       case PoiStatus.validated:
-        _afficherDialogTexte(poi.message);
+        final estLu = _poisLusIds.contains(poi.id);
+        if (estLu || _isModerator) {
+          _afficherDialogTexte(poi);
+        } else {
+          _afficherDialogNonLu();
+        }
       case PoiStatus.initiated:
         _afficherDialogEdition(poi);
       case PoiStatus.proposed:
         if (_isModerator) {
           _afficherDialogModeration(poi);
         } else {
-          _afficherDialogTexte(poi.message);
+          _afficherDialogTexte(poi);
         }
     }
   }
 
-void _afficherDialogTexte(String message) {
+void _afficherDialogTexte(PointInteret poi) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Anecdote'),
       // On enveloppe le texte dans un SingleChildScrollView
       content: SingleChildScrollView(
-        child: Text(message),
+        child: Text(poi.message),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            _localiserAnecdote(poi);
+          },
+          child: const Text('Localiser cette anecdote'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Bascule sur l'onglet Carte et recentre la carte sur le POI donné
+void _localiserAnecdote(PointInteret poi) {
+  // On mémorise la cible : elle sert à la fois d'initialCenter si la carte
+  // est (re)construite par TabBarView, et de cible pour le move().
+  setState(() => _cibleLocalisation = poi.position);
+
+  // Bascule immédiate (sans animation) vers l'onglet Carte
+  _tabController.index = 0;
+
+  // Si la carte est déjà construite, onMapReady ne se redéclenchera pas :
+  // on la déplace donc aussi après la frame en cours.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    try {
+      _mapController.move(poi.position, _zoomLocalisation);
+    } catch (_) {
+      // Carte pas encore prête : onMapReady prendra le relais.
+    }
+  });
+}
+
+/// Affiche un message explicatif quand un utilisateur non-modérateur
+/// tape sur un POI validé (gris) qu'il n'a pas encore lu
+void _afficherDialogNonLu() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Anecdote non lue'),
+      content: const Text(
+        "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
       ),
       actions: [
         TextButton(
@@ -462,6 +547,7 @@ void _afficherDialogTexte(String message) {
     final poisValides = await _poiRepository.chargerPoisValides();
     final mesPois = await _poiRepository.chargerMesPois(uid);
     final poisLus = await _poiRepository.chargerPoisLus(uid);
+    final datesLecture = await _poiRepository.chargerDatesLecture(uid);
     final tousLesPois = [...poisValides];
     for (final poi in mesPois) {
       if (!tousLesPois.any((p) => p.id == poi.id)) tousLesPois.add(poi);
@@ -476,6 +562,7 @@ void _afficherDialogTexte(String message) {
       setState(() {
         _pointsInteret = tousLesPois;
         _poisLusIds = poisLus;
+        _datesLecture = datesLecture;
       });
     }
   }
@@ -740,8 +827,16 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
         FlutterMap(
           mapController: _mapController,
           options: MapOptions(
-            initialCenter: widget.positionInitiale,
-            initialZoom: 16.0,
+            initialCenter: _cibleLocalisation ?? widget.positionInitiale,
+            initialZoom:
+                _cibleLocalisation != null ? _zoomLocalisation : 16.0,
+            onMapReady: () {
+              // Carte (re)construite : on applique la cible si elle existe
+              final cible = _cibleLocalisation;
+              if (cible != null) {
+                _mapController.move(cible, _zoomLocalisation);
+              }
+            },
             onTap: (tapPosition, latLng) => _onCarteTappee(latLng),
             onLongPress: (tapPosition, latLng) => _onCarteLongPress(latLng),
           ),
@@ -755,6 +850,8 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
             CircleLayer(circles: _buildCercles()),
           ],
         ),
+
+        MapCompassButton(mapController: _mapController),
 
         // Bannière orange en mode sélection de position
         if (_modeSelectionPosition)

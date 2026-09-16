@@ -3,7 +3,7 @@ description: FaYoW - Points d'intérêt géolocalisés
 
 publish_to: none
 
-version: 1.0.2+16
+version: 1.0.3+17
 
 environment:
   sdk: '>=3.3.0 <4.0.0'

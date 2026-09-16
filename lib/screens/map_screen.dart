@@ -25,6 +25,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 //   Tout passe par ForegroundServiceManager (foreground_service.dart)
 //   qui contient les guards Platform.isAndroid.
 import 'package:flutter_compass/flutter_compass.dart';
+import '../widgets/map_compass_button.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -374,6 +375,26 @@ void _fermerDialogPoi() {
   }
 }
 
+/// Affiche un message explicatif quand un utilisateur non-modérateur
+/// tape sur un POI validé (violet) qu'il n'a pas encore lu
+void _afficherDialogNonLu() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Anecdote non lue'),
+      content: const Text(
+        "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fermer'),
+        ),
+      ],
+    ),
+  );
+}
+
 void _onAjouterPoiClicked() {
   final position = _currentPosition;
   if (position == null) {
@@ -458,7 +479,7 @@ void _onAjouterPoiClicked() {
       case PoiStatus.initiated:
         return Colors.orange.withOpacity(0.5);
       case PoiStatus.proposed:
-        return Colors.grey.withOpacity(0.5);
+        return Colors.blue[900]!.withOpacity(0.5);
     }
   }
 
@@ -469,7 +490,7 @@ void _onAjouterPoiClicked() {
       case PoiStatus.initiated:
         return Colors.orange;
       case PoiStatus.proposed:
-        return Colors.grey;
+        return Colors.blue[900]!;
     }
   }
 
@@ -496,7 +517,6 @@ void _onCarteTappee(LatLng tapLatLng) {
   for (final poi in _pointsInteret) {
     // Utilisateur normal : seulement INITIATED
     // Modérateur : INITIATED + PROPOSED
-    if (poi.status == PoiStatus.validated) continue;
     if (!_isModerator && poi.status == PoiStatus.proposed) continue;
 
     final dist = _distance.as(LengthUnit.Meter, tapLatLng, poi.position);
@@ -507,7 +527,9 @@ void _onCarteTappee(LatLng tapLatLng) {
   }
 
   if (poiTouche != null) {
-    if (poiTouche.status == PoiStatus.proposed && _isModerator) {
+    if (poiTouche.status == PoiStatus.validated) {
+      _afficherDialogNonLu();
+    } else if (poiTouche.status == PoiStatus.proposed && _isModerator) {
       _afficherDialogModerationPoi(poiTouche);
     } else {
       _afficherDialogEditionPoi(poiTouche);
@@ -1123,39 +1145,44 @@ Widget build(BuildContext context) {
           // Carte
           Expanded(
             child: _locationReady
-                ? FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: _currentPosition!,
-                      initialZoom: 16.0,
-                      onTap: (tapPosition, latLng) =>
-                          _onCarteTappee(latLng),
-                    ),
+                ? Stack(
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
-                        subdomains: const ['a', 'b', 'c', 'd'],
-                        userAgentPackageName: 'com.example.fayow',
-                      ),
-                      CircleLayer(circles: _buildCercles()),
-                      MarkerLayer(
-                        markers: [
-                          if (_currentPosition != null)
-                            Marker(
-                              point: _currentPosition!,
-                              width: 48,
-                              height: 48,
-                              child: Transform.rotate(
-                                angle: _currentHeading * (math.pi / 180.0),
-                                child: CustomPaint(
-                                  size: const Size(48, 48),
-                                  painter: _DirectionMarkerPainter(color: Colors.blue),
+                      FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: _currentPosition!,
+                          initialZoom: 16.0,
+                          onTap: (tapPosition, latLng) =>
+                              _onCarteTappee(latLng),
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
+                            subdomains: const ['a', 'b', 'c', 'd'],
+                            userAgentPackageName: 'com.example.fayow',
+                          ),
+                          CircleLayer(circles: _buildCercles()),
+                          MarkerLayer(
+                            markers: [
+                              if (_currentPosition != null)
+                                Marker(
+                                  point: _currentPosition!,
+                                  width: 48,
+                                  height: 48,
+                                  child: Transform.rotate(
+                                    angle: _currentHeading * (math.pi / 180.0),
+                                    child: CustomPaint(
+                                      size: const Size(48, 48),
+                                      painter: _DirectionMarkerPainter(color: Colors.blue),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
+                            ],
+                          ),
                         ],
                       ),
+                      MapCompassButton(mapController: _mapController),
                     ],
                   )
                 : const Center(child: CircularProgressIndicator()),

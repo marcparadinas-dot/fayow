@@ -51,6 +51,28 @@ Future<Set<String>> chargerPoisLus(String uid) async {
   }
 }
 
+// Charger la date de lecture (readAt) de chaque POI lu par l'utilisateur
+Future<Map<String, DateTime>> chargerDatesLecture(String uid) async {
+  try {
+    final snapshot = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('readPois')
+        .get();
+    final Map<String, DateTime> dates = {};
+    for (final doc in snapshot.docs) {
+      final readAt = doc.data()['readAt'];
+      if (readAt is Timestamp) {
+        dates[doc.id] = readAt.toDate();
+      }
+    }
+    return dates;
+  } catch (e) {
+    print('Erreur chargerDatesLecture : $e');
+    return {};
+  }
+}
+
 // Charger tous les POIs proposés (pour le modérateur)
 Future<List<PointInteret>> chargerTousPoisProposed() async {
   try {
