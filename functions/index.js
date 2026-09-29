@@ -358,18 +358,25 @@ exports.notifierValidationAnecdote = onDocumentWritten(
 `Bonjour ${pseudo},
 
 L'anecdote que vous avez proposée aux coordonnées ${coords} a été acceptée ! Elle est désormais disponible pour l'ensemble des utilisateurs de FaYoW.
+'${apercuHtml}'
 
 Bravo, votre score a gagné ${gain} points supplémentaires !
 Et merci infiniment de contribuer à enchanter le monde.
 
-Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.`;
+Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.
+
+Cordialement,
+L'équipe FaYoW`;
 
       const html =
 `<p>Bonjour ${echapperHtml(pseudo)},</p>
 <p>L'anecdote que vous avez proposée aux coordonnées ${echapperHtml(coords)} a été acceptée ! Elle est désormais disponible pour l'ensemble des utilisateurs de FaYoW.</p>
+<blockquote style="border-left: 3px solid #ccc; padding-left: 12px; color: #555;">
+<em>${echapperHtml(apercuHtml)}</em>
+</blockquote>
 <p>Bravo, votre score a gagné ${gain} points supplémentaires !<br>
 Et merci infiniment de contribuer à enchanter le monde.</p>
-<p><em>Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.</em></p>`;
+<p><em>Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.</em></p><p>Cordialement,<br><strong>L'équipe FaYoW</strong></p>`;
 
       // ID déterministe : évite un doublon si le trigger est rejoué
       await db
