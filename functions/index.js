@@ -21,6 +21,9 @@ const MODERATOR_EMAILS = [
   "marc.paradinas@wanadoo.fr",
 ];
 
+// Collection surveillée par l'extension Firebase "Trigger Email from Firestore".
+const COLLECTION_MAIL = "mail";
+
 // ---------------------------------------------------------------------------
 // Barème de points — garder en phase avec ScoreService côté Flutter si tu
 // changes un jour ces valeurs.
@@ -61,6 +64,13 @@ async function estMasqueDuClassement(uid) {
     console.error(`Erreur lecture masquerDuClassement pour ${uid} :`, error.message);
     return false; // en cas de doute, on ne masque pas.
   }
+}
+
+function echapperHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 // =============================================================================
@@ -285,6 +295,97 @@ exports.recalculerScoreSurLecture = onDocumentCreated(
       );
     } catch (error) {
       console.error(`Erreur incrément lecture pour ${uid} :`, error.message);
+    }
+  }
+);
+
+// =============================================================================
+// notifierValidationAnecdote
+//
+// À la transition d'une anecdote vers le statut "validated", dépose un e-mail
+// de remerciement dans la collection "mail" (envoyé par l'extension Firebase
+// "Trigger Email from Firestore"). Uniquement pour les utilisateurs qui
+// disposent d'un score.total (donc jamais pour les comptes masqués).
+// =============================================================================
+exports.notifierValidationAnecdote = onDocumentWritten(
+  { document: "pois/{poiId}", region: "us-central1" },
+  async (event) => {
+    const beforeSnap = event.data.before;
+    const afterSnap = event.data.after;
+
+    const beforeData = beforeSnap && beforeSnap.exists ? beforeSnap.data() : null;
+    const afterData = afterSnap && afterSnap.exists ? afterSnap.data() : null;
+
+    if (!afterData) return; // suppression
+
+    const beforeStatus = beforeData && beforeData.status;
+    const afterStatus = afterData.status;
+
+    // Uniquement à la transition vers "validated"
+    if (afterStatus !== "validated" || beforeStatus === "validated") return;
+
+    const creatorUid = afterData.creatorUid;
+    if (!creatorUid) return;
+
+    try {
+      const userSnap = await db.collection("users").doc(creatorUid).get();
+      if (!userSnap.exists) return;
+      const user = userSnap.data();
+
+      // Uniquement les utilisateurs disposant d'un total de score
+      if (user.masquerDuClassement === true) return;
+      if (typeof (user.score && user.score.total) !== "number") return;
+
+      const userRecord = await admin.auth().getUser(creatorUid);
+      const email = userRecord.email;
+      if (!email) return;
+
+      const pseudo = user.pseudo || "contributeur";
+
+      const lat = Number(afterData.lat);
+      const lng = Number(afterData.lng);
+      const coords =
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+          : "indiquées";
+
+      // Points gagnés = valeur "validé" moins celle du statut précédent
+      const gain = POINTS.validated - pointsPourStatut(beforeStatus);
+
+      const sujet = "FaYoW - Votre anecdote est validée !";
+
+      const texte =
+`Bonjour ${pseudo},
+
+L'anecdote que vous avez proposée aux coordonnées ${coords} a été acceptée ! Elle est désormais disponible pour l'ensemble des utilisateurs de FaYoW.
+
+Bravo, votre score a gagné ${gain} points supplémentaires !
+Et merci infiniment de contribuer à enchanter le monde.
+
+Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.`;
+
+      const html =
+`<p>Bonjour ${echapperHtml(pseudo)},</p>
+<p>L'anecdote que vous avez proposée aux coordonnées ${echapperHtml(coords)} a été acceptée ! Elle est désormais disponible pour l'ensemble des utilisateurs de FaYoW.</p>
+<p>Bravo, votre score a gagné ${gain} points supplémentaires !<br>
+Et merci infiniment de contribuer à enchanter le monde.</p>
+<p><em>Nota : De légères modifications de forme ont pu être apportées par la modération (position, orthographe, grammaire, suppression de caractères non interprétés par la synthèse vocale), mais le fond de l'anecdote a été préservé.</em></p>`;
+
+      // ID déterministe : évite un doublon si le trigger est rejoué
+      await db
+        .collection(COLLECTION_MAIL)
+        .doc(`validation_${event.params.poiId}`)
+        .set({
+          to: email,
+          message: { subject: sujet, text: texte, html: html },
+        });
+
+      console.log(`Mail de validation déposé pour ${creatorUid} (${event.params.poiId}).`);
+    } catch (error) {
+      console.error(
+        `Erreur notification de validation pour ${creatorUid} :`,
+        error.message
+      );
     }
   }
 );
