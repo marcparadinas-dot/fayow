@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/score_service.dart';
@@ -132,6 +135,11 @@ class _ClassementScreenState extends State<ClassementScreen> {
       );
     }
   }
+  /// "0 lue", "1 lue", "2 lues" : en français, 0 et 1 restent au singulier
+  String _compte(dynamic valeur, String singulier, String pluriel) {
+    final n = (valeur as num?)?.toInt() ?? 0;
+    return '$n ${n > 1 ? pluriel : singulier}';
+  }
 
   // -------------------------------------------------------------------------
   // Build
@@ -141,6 +149,16 @@ class _ClassementScreenState extends State<ClassementScreen> {
   Widget build(BuildContext context) {
     final monProfil = _monProfil;
     final maPosition = _maPosition;
+
+    // Marge basse : le dernier joueur ne doit pas passer sous la barre de
+    // navigation Android (le corps de l'écran s'étend derrière elle). On
+    // utilise viewPadding, l'inset système brut, avec un minimum sur Android
+    // pour les téléphones qui ne le remontent pas.
+    final insetBas = MediaQuery.of(context).viewPadding.bottom;
+    final margeBasse = (defaultTargetPlatform == TargetPlatform.android
+            ? math.max(insetBas, 48.0)
+            : insetBas) +
+        16;
 
     return Scaffold(
       appBar: AppBar(
@@ -192,7 +210,7 @@ class _ClassementScreenState extends State<ClassementScreen> {
                         Text(
                           'Classé $maPosition${maPosition == 1 ? 'er' : 'ème'} '
                           'sur ${_classement.length} '
-                          '· ${monProfil['total']} points',
+                          '· ${_compte(monProfil['total'], 'point', 'points')}',
                           style: TextStyle(
                             color: Colors.white.withOpacity(0.9),
                             fontSize: 14,
@@ -212,7 +230,7 @@ class _ClassementScreenState extends State<ClassementScreen> {
                           ),
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: EdgeInsets.only(top: 8, bottom: margeBasse),
                           itemCount: _classement.length,
                           separatorBuilder: (_, __) =>
                               const Divider(height: 1),
@@ -268,10 +286,10 @@ class _ClassementScreenState extends State<ClassementScreen> {
                                   ],
                                 ),
                                 subtitle: Text(
-                                  '${user['poisLus']} lu · '
-                                  '${user['poisInitiated']} initié · '
-                                  '${user['poisProposed']} proposé · '
-                                  '${user['poisValidated']} validé',
+                                  '${_compte(user['poisLus'], 'lue', 'lues')} · '
+                                  '${_compte(user['poisInitiated'], 'initiée', 'initiées')} · '
+                                  '${_compte(user['poisProposed'], 'proposée', 'proposées')} · '
+                                  '${_compte(user['poisValidated'], 'validée', 'validées')}',
                                   style: const TextStyle(fontSize: 11),
                                 ),
                                 trailing: Text(

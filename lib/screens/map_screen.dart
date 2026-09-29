@@ -18,14 +18,15 @@ import 'profil_screen.dart';
 import '../services/score_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 // → flutter_foreground_task n'est plus importé directement ici.
 //   Tout passe par ForegroundServiceManager (foreground_service.dart)
 //   qui contient les guards Platform.isAndroid.
 import 'package:flutter_compass/flutter_compass.dart';
 import '../widgets/map_compass_button.dart';
+import '../widgets/direction_marker.dart';
+import '../widgets/map_recenter_button.dart';
+import '../widgets/confirmation_soumission.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -42,7 +43,10 @@ class _MapScreenState extends State<MapScreen> {
   final CommuneService _communeService = CommuneService();
 
   LatLng? _currentPosition;
-  double _currentHeading = 0.0;
+  // Orientation de l'utilisateur (0 = nord). ValueNotifier : seul le marqueur
+  // est reconstruit quand le cap change, pas tout l'écran.
+  final ValueNotifier<double> _currentHeading = ValueNotifier<double>(0.0);
+  StreamSubscription<CompassEvent>? _compassSubscription;
   bool _locationReady = false;
   bool _modeReaffichage = false;
   bool _poisCharges = false;
@@ -72,20 +76,25 @@ class _MapScreenState extends State<MapScreen> {
     _isModerator = AuthService.isModerator;
     _initLocation();
 
-    // flutter_compass — iOS uniquement
-    // Sur Android, le heading vient du foreground task via _onReceiveTaskData
-    if (Platform.isIOS) {
-      FlutterCompass.events?.listen((CompassEvent event) {
-        if (!mounted) return;
-        if (event.heading != null) {
-          setState(() {
-            _currentHeading = event.heading!;
-          });
-        }
-      });
-    }
+    // flutter_compass — iOS et Android
+    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
+      final heading = event.heading;
+      if (!mounted || heading == null) return;
+      // Sur Android le capteur émet très souvent : on ignore les variations
+      // inférieures à 2° pour ne pas reconstruire l'écran inutilement.
+      final ecart = ((heading - _currentHeading.value + 540) % 360) - 180;
+      if (ecart.abs() < 2.0) return;
+      _currentHeading.value = heading;
+    });
 
     _chargerPois();
+  }
+
+  /// Recentre la carte sur l'utilisateur en conservant le niveau de zoom
+  void _recentrerSurUtilisateur() {
+    final position = _currentPosition;
+    if (position == null) return;
+    _mapController.move(position, _mapController.camera.zoom);
   }
 
   void _onReceiveTaskData(Object data) {
@@ -106,6 +115,8 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     _locationSubscription?.cancel();
+    _compassSubscription?.cancel();
+    _currentHeading.dispose();
     _ttsService.dispose();
 
     // Arrêt du service — Android uniquement (no-op sur iOS)
@@ -562,6 +573,12 @@ void _afficherDialogEditionPoi(PointInteret poi) {
           onPressed: () async {
             final message = textController.text.trim();
             if (message.isEmpty) return;
+
+            // Confirmation avant envoi (en cas de clic par inadvertance).
+            // Sur "Non", on reste dans l'édition, texte conservé.
+            final confirme =
+                await confirmerSoumissionModeration(context, message);
+            if (!confirme || !context.mounted) return;
             Navigator.pop(context);
 
             try {
@@ -1170,12 +1187,10 @@ Widget build(BuildContext context) {
                                   point: _currentPosition!,
                                   width: 48,
                                   height: 48,
-                                  child: Transform.rotate(
-                                    angle: _currentHeading * (math.pi / 180.0),
-                                    child: CustomPaint(
-                                      size: const Size(48, 48),
-                                      painter: _DirectionMarkerPainter(color: Colors.blue),
-                                    ),
+                                  child: ValueListenableBuilder<double>(
+                                    valueListenable: _currentHeading,
+                                    builder: (_, cap, __) =>
+                                        DirectionMarker(capDegres: cap),
                                   ),
                                 ),
                             ],
@@ -1183,6 +1198,11 @@ Widget build(BuildContext context) {
                         ],
                       ),
                       MapCompassButton(mapController: _mapController),
+                      MapRecenterButton(
+                        mapController: _mapController,
+                        userPosition: _currentPosition!,
+                        onRecenter: _recentrerSurUtilisateur,
+                      ),
                     ],
                   )
                 : const Center(child: CircularProgressIndicator()),
@@ -1334,46 +1354,4 @@ Widget build(BuildContext context) {
     ),
   );
 }
-}
-// ---------------------------------------------------------------------------
-// Painter : cercle blanc bordé de bleu avec flèche directionnelle
-// La pointe de la flèche pointe vers le haut (= nord = 0°).
-// La rotation est appliquée par Transform.rotate dans le widget parent.
-// ---------------------------------------------------------------------------
-
-class _DirectionMarkerPainter extends CustomPainter {
-  final Color color;
-  const _DirectionMarkerPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 2;
-
-    canvas.drawCircle(
-      center,
-      radius,
-      Paint()
-        ..color = const Color(0x33FFFFFF) // blanc très légèrement translucide
-        ..style = PaintingStyle.fill,
-    );
-
-    canvas.drawCircle(center, radius,
-        Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 3);
-
-    final double h = radius * 1.1;
-    final double w = radius * 0.50;
-
-    final ui.Path path = ui.Path();
-    path.moveTo(center.dx, center.dy - h * 0.56);
-    path.lineTo(center.dx - w, center.dy + h * 0.36);
-    path.lineTo(center.dx, center.dy + h * 0.16);
-    path.lineTo(center.dx + w, center.dy + h * 0.36);
-    path.close();
-
-    canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.fill);
-  }
-
-  @override
-  bool shouldRepaint(_DirectionMarkerPainter old) => old.color != color;
 }

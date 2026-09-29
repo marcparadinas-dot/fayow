@@ -1,6 +1,12 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/poi_models.dart';
@@ -10,6 +16,12 @@ import '../services/score_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
 import '../widgets/map_compass_button.dart';
+import '../widgets/map_recenter_button.dart';
+import '../widgets/confirmation_soumission.dart';
+import '../widgets/direction_marker.dart';
+
+/// Filtre d'affichage de l'onglet Liste
+enum _FiltreListe { tout, lus, proposes, inities }
 
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
@@ -44,6 +56,19 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   LatLng? _cibleLocalisation;
   static const double _zoomLocalisation = 18.0;
 
+  // Position de l'utilisateur (mise à jour en continu) : sert au bouton de
+  // recentrage, qui n'apparaît que si la carte s'en éloigne.
+  late LatLng _positionUtilisateur;
+  StreamSubscription<Position>? _positionSubscription;
+
+  // Onglet Liste : filtre actif et contrôleur de défilement (ascenseur)
+  _FiltreListe _filtreListe = _FiltreListe.tout;
+  final ScrollController _listeController = ScrollController();
+  StreamSubscription<CompassEvent>? _compassSubscription;
+  // Orientation de l'utilisateur (0 = nord). ValueNotifier : seul le marqueur
+  // est reconstruit quand le cap change, pas tout l'écran.
+  final ValueNotifier<double> _cap = ValueNotifier<double>(0.0);
+
   // Déplacement en deux étapes
   bool _modeSelectionPosition = false;
   PointInteret? _poiADeplacer;
@@ -55,7 +80,53 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     _pointsInteret = List.from(widget.pointsInteret);
     _poisLusIds = Set.from(widget.poisLusIds);
     _isModerator = AuthService.isModerator;
+    _positionUtilisateur = widget.positionInitiale;
+    _suivrePositionUtilisateur();
+    _suivreCap();
     _chargerDatesLecture();
+  }
+
+  /// Cap de l'utilisateur via flutter_compass (iOS et Android), comme sur la
+  /// carte principale (voir MapScreen).
+  void _suivreCap() {
+    _compassSubscription = FlutterCompass.events?.listen((event) {
+      final heading = event.heading;
+      if (!mounted || heading == null) return;
+      // On ignore les variations inférieures à 2° (capteur Android très bavard)
+      final ecart = ((heading - _cap.value + 540) % 360) - 180;
+      if (ecart.abs() < 2.0) return;
+      _cap.value = heading;
+    });
+  }
+
+  void _suivrePositionUtilisateur() {
+    try {
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 5,
+        ),
+      ).listen(
+        (position) {
+          if (!mounted) return;
+          setState(() {
+            _positionUtilisateur =
+                LatLng(position.latitude, position.longitude);
+          });
+        },
+        onError: (_) {
+          // GPS indisponible : on garde la dernière position connue
+        },
+      );
+    } catch (_) {
+      // Permission absente : on garde la position initiale
+    }
+  }
+
+  /// Recentre la carte sur l'utilisateur en conservant le niveau de zoom
+  void _recentrerSurUtilisateur() {
+    setState(() => _cibleLocalisation = null);
+    _mapController.move(_positionUtilisateur, _mapController.camera.zoom);
   }
 
   Future<void> _chargerDatesLecture() async {
@@ -69,6 +140,10 @@ class _ParcourirScreenState extends State<ParcourirScreen>
 
   @override
   void dispose() {
+    _positionSubscription?.cancel();
+    _compassSubscription?.cancel();
+    _cap.dispose();
+    _listeController.dispose();
     _tabController.dispose();
     super.dispose();
   }
@@ -96,9 +171,23 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     }).toList();
   }
 
+  bool _correspondAuFiltre(PointInteret poi) {
+    switch (_filtreListe) {
+      case _FiltreListe.tout:
+        return true;
+      case _FiltreListe.lus:
+        return poi.status == PoiStatus.validated &&
+            _poisLusIds.contains(poi.id);
+      case _FiltreListe.proposes:
+        return poi.status == PoiStatus.proposed;
+      case _FiltreListe.inities:
+        return poi.status == PoiStatus.initiated;
+    }
+  }
+
   // POIs triés : validés lus (récent → ancien), puis proposés, puis initiés
   List<PointInteret> get _poisTries {
-    final liste = List<PointInteret>.from(_poisListe);
+    final liste = _poisListe.where(_correspondAuFiltre).toList();
     liste.sort((a, b) {
       int ordreStatut(PointInteret p) {
         if (p.status == PoiStatus.validated && _poisLusIds.contains(p.id)) return 0;
@@ -168,10 +257,10 @@ class _ParcourirScreenState extends State<ParcourirScreen>
 
   String _getStatutLabel(PointInteret poi) {
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
-      return 'Lu';
+      return 'Lue';
     }
-    if (poi.status == PoiStatus.validated) return 'Validé';
-    if (poi.status == PoiStatus.proposed) return 'Proposé';
+    if (poi.status == PoiStatus.validated) return 'Validée';
+    if (poi.status == PoiStatus.proposed) return 'Proposée';
     return 'Brouillon';
   }
 
@@ -359,27 +448,30 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   // Dialog POI unifié (carte + liste)
   // -------------------------------------------------------------------------
 
-  void _ouvrirDialogPoi(PointInteret poi) {
+  /// [depuisListe] : true si le dialog est ouvert depuis l'onglet Liste
+  /// (le bouton "Localiser" n'a de sens que dans ce cas, puisque depuis la
+  /// carte l'anecdote est déjà localisée).
+  void _ouvrirDialogPoi(PointInteret poi, {bool depuisListe = false}) {
     switch (poi.status) {
       case PoiStatus.validated:
         final estLu = _poisLusIds.contains(poi.id);
         if (estLu || _isModerator) {
-          _afficherDialogTexte(poi);
+          _afficherDialogTexte(poi, avecLocaliser: depuisListe);
         } else {
           _afficherDialogNonLu();
         }
       case PoiStatus.initiated:
-        _afficherDialogEdition(poi);
+        _afficherDialogEdition(poi, avecLocaliser: depuisListe);
       case PoiStatus.proposed:
         if (_isModerator) {
-          _afficherDialogModeration(poi);
+          _afficherDialogModeration(poi, avecLocaliser: depuisListe);
         } else {
-          _afficherDialogTexte(poi);
+          _afficherDialogTexte(poi, avecLocaliser: depuisListe);
         }
     }
   }
 
-void _afficherDialogTexte(PointInteret poi) {
+void _afficherDialogTexte(PointInteret poi, {bool avecLocaliser = false}) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
@@ -393,13 +485,14 @@ void _afficherDialogTexte(PointInteret poi) {
           onPressed: () => Navigator.pop(context),
           child: const Text('Fermer'),
         ),
-        TextButton(
-          onPressed: () {
-            Navigator.pop(context);
-            _localiserAnecdote(poi);
-          },
-          child: const Text('Localiser cette anecdote'),
-        ),
+        if (avecLocaliser)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _localiserAnecdote(poi);
+            },
+            child: const Text('Localiser cette anecdote'),
+          ),
       ],
     ),
   );
@@ -446,7 +539,7 @@ void _afficherDialogNonLu() {
   );
 }
 
-  void _afficherDialogEdition(PointInteret poi) {
+  void _afficherDialogEdition(PointInteret poi, {bool avecLocaliser = false}) {
     final textController = TextEditingController(text: poi.message);
     showDialog(
       context: context,
@@ -458,10 +551,24 @@ void _afficherDialogNonLu() {
             onPressed: () => Navigator.pop(context),
             child: const Text('Annuler'),
           ),
+          if (avecLocaliser)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _localiserAnecdote(poi);
+              },
+              child: const Text('Localiser cette anecdote'),
+            ),
           TextButton(
             onPressed: () async {
               final message = textController.text.trim();
               if (message.isEmpty) return;
+
+              // Confirmation avant envoi (en cas de clic par inadvertance).
+              // Sur "Non", on reste dans l'édition, texte conservé.
+              final confirme =
+                  await confirmerSoumissionModeration(context, message);
+              if (!confirme || !context.mounted) return;
               Navigator.pop(context);
               await _poiRepository.mettreAJourPoi(
                   poi.id, {'message': message, 'status': 'proposed'});
@@ -490,7 +597,7 @@ void _afficherDialogNonLu() {
     );
   }
 
-  void _afficherDialogModeration(PointInteret poi) {
+  void _afficherDialogModeration(PointInteret poi, {bool avecLocaliser = false}) {
     final textController = TextEditingController(text: poi.message);
     showDialog(
       context: context,
@@ -502,6 +609,14 @@ void _afficherDialogNonLu() {
             onPressed: () => Navigator.pop(context),
             child: const Text('Annuler'),
           ),
+          if (avecLocaliser)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _localiserAnecdote(poi);
+              },
+              child: const Text('Localiser cette anecdote'),
+            ),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
@@ -757,8 +872,33 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    // Marge basse : la dernière anecdote ne doit pas passer sous la barre de
+    // navigation Android (le corps de l'écran s'étend derrière elle). On
+    // utilise viewPadding, l'inset système brut, que Scaffold ne consomme pas,
+    // avec un minimum sur Android pour les téléphones qui ne le remontent pas.
+    final insetBas = MediaQuery.of(context).viewPadding.bottom;
+    final margeBasse = (defaultTargetPlatform == TargetPlatform.android
+            ? math.max(insetBas, 48.0)
+            : insetBas) +
+        16;
+
+    final mq = MediaQuery.of(context);
+
+    // La MediaQuery est ajustée pour que l'ascenseur (Scrollbar) s'arrête
+    // au-dessus de la barre de navigation Android au lieu de passer dessous.
+    return MediaQuery(
+      data: mq.copyWith(
+        padding: mq.padding.copyWith(bottom: margeBasse - 16),
+      ),
+      child: Scrollbar(
+        controller: _listeController,
+        thumbVisibility: true, // ascenseur toujours visible
+        interactive: true, // on peut le saisir et le faire glisser
+        thickness: 8,
+        radius: const Radius.circular(4),
+        child: ListView.separated(
+      controller: _listeController,
+      padding: EdgeInsets.only(top: 8, bottom: margeBasse),
       itemCount: pois.length,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
@@ -811,9 +951,57 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
             ],
           ),
           trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-          onTap: () => _ouvrirDialogPoi(poi),
+          onTap: () => _ouvrirDialogPoi(poi, depuisListe: true),
         );
       },
+        ),
+      ),
+    );
+  }
+
+  /// Petits boutons de filtre affichés à droite des onglets (dans l'AppBar).
+  /// Visibles uniquement sur l'onglet Liste, avec un fondu pendant le glissement.
+  Widget _buildFiltresListe() {
+    final animation = _tabController.animation!;
+
+    Widget chip(String label, _FiltreListe filtre, [Color? couleur]) =>
+        Expanded(
+          child: _FiltreChip(
+            label: label,
+            couleur: couleur,
+            selectionne: _filtreListe == filtre,
+            onTap: () => setState(() => _filtreListe = filtre),
+          ),
+        );
+
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final visibilite = animation.value.clamp(0.0, 1.0);
+        return Opacity(
+          opacity: visibilite,
+          child: IgnorePointer(ignoring: visibilite < 0.5, child: child),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(children: [
+              chip('Toutes', _FiltreListe.tout),
+              const SizedBox(width: 4),
+              chip('Lues', _FiltreListe.lus, Colors.green),
+            ]),
+            const SizedBox(height: 4),
+            Row(children: [
+              chip('Proposées', _FiltreListe.proposes, Colors.blue[900]),
+              const SizedBox(width: 4),
+              chip('Brouillon', _FiltreListe.inities, Colors.orange),
+            ]),
+          ],
+        ),
+      ),
     );
   }
 
@@ -848,10 +1036,31 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
               userAgentPackageName: 'com.example.fayow',
             ),
             CircleLayer(circles: _buildCercles()),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: _positionUtilisateur,
+                  width: 48,
+                  height: 48,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _cap,
+                    builder: (_, cap, __) => DirectionMarker(capDegres: cap),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
 
         MapCompassButton(mapController: _mapController),
+
+        MapRecenterButton(
+          mapController: _mapController,
+          userPosition: _positionUtilisateur,
+          onRecenter: _recentrerSurUtilisateur,
+          // Remonté pour rester au-dessus de la barre de navigation Android
+          margin: const EdgeInsets.only(bottom: 80, right: 12),
+        ),
 
         // Bannière orange en mode sélection de position
         if (_modeSelectionPosition)
@@ -951,22 +1160,40 @@ appBar: AppBar(
   */
   
   ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Colors.white,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white70,
-          tabs: const [
-            Tab(icon: Icon(Icons.map), text: 'Carte'),
-            Tab(icon: Icon(Icons.list), text: 'Liste'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(72),
+          child: Row(
+            children: [
+              // Onglets compacts, alignés à gauche
+              SizedBox(
+                width: 160,
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorColor: Colors.white,
+                  labelColor: Colors.white,
+                  unselectedLabelColor: Colors.white70,
+                  dividerColor: Colors.transparent,
+                  tabs: const [
+                    Tab(icon: Icon(Icons.map), text: 'Carte'),
+                    Tab(icon: Icon(Icons.list), text: 'Liste'),
+                  ],
+                ),
+              ),
+              // Filtres de l'onglet Liste, dans la place restante à droite
+              Expanded(child: _buildFiltresListe()),
+            ],
+          ),
         ),
       ),
       
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildCarte(),
+          // La carte est maintenue en vie entre les bascules d'onglet :
+          // sinon la FlutterMap est détruite, son client HTTP fermé, et les
+          // tuiles en cours de téléchargement génèrent des
+          // "ClientException: Client is already closed" dans le terminal.
+          _KeepAliveWrapper(child: _buildCarte()),
           _buildListe(),
         ],
       ),
@@ -981,5 +1208,95 @@ extension ListExtension<T> on List<T> {
       if (test(this[i])) return i;
     }
     return -1;
+  }
+}
+
+/// Empêche TabBarView de détruire son enfant lors d'un changement d'onglet.
+/// Utilisé pour la carte, afin que la FlutterMap (et son client HTTP de
+/// téléchargement des tuiles) survive aux allers-retours Carte <-> Liste.
+class _KeepAliveWrapper extends StatefulWidget {
+  final Widget child;
+  const _KeepAliveWrapper({required this.child});
+
+  @override
+  State<_KeepAliveWrapper> createState() => _KeepAliveWrapperState();
+}
+
+class _KeepAliveWrapperState extends State<_KeepAliveWrapper>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // requis par AutomaticKeepAliveClientMixin
+    return widget.child;
+  }
+}
+
+/// Petit bouton de filtre. Sans [couleur] (bouton "Tout") : fond blanc quand
+/// il est sélectionné. Avec [couleur] (celle des points sur la carte) : fond
+/// de cette couleur, plein et cerclé de blanc quand il est sélectionné,
+/// atténué sinon.
+class _FiltreChip extends StatelessWidget {
+  final String label;
+  final Color? couleur;
+  final bool selectionne;
+  final VoidCallback onTap;
+
+  const _FiltreChip({
+    required this.label,
+    required this.selectionne,
+    required this.onTap,
+    this.couleur,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fond;
+    final Color texte;
+    if (couleur == null) {
+      fond = selectionne ? Colors.white : Colors.white.withOpacity(0.18);
+      texte = selectionne ? Colors.deepPurple : Colors.white;
+    } else {
+      fond = selectionne ? couleur! : couleur!.withOpacity(0.45);
+      texte = selectionne ? Colors.white : Colors.white70;
+    }
+
+    return Material(
+      color: fond,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: (couleur != null && selectionne)
+            ? const BorderSide(color: Colors.white, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        onTap: onTap,
+        child: SizedBox(
+          height: 28,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight:
+                        selectionne ? FontWeight.bold : FontWeight.normal,
+                    color: texte,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -253,10 +256,6 @@ Future<void> _sauvegarderEmail(String nouvelEmail) async {
       'targetUid': uid,
       'newEmail': nouvelEmail,
     });
-final result = await callable.call({
-  'targetUid': uid,
-  'newEmail': nouvelEmail,
-});
 
 // Mettre à jour l'email dans Firestore pour la cohérence
 await FirebaseFirestore.instance
@@ -403,6 +402,16 @@ setState(() {
 
   @override
   Widget build(BuildContext context) {
+    // Marge basse : le dernier bouton ne doit pas passer sous la barre de
+    // navigation Android (le corps de l'écran s'étend derrière elle). On
+    // utilise viewPadding, l'inset système brut, avec un minimum sur Android
+    // pour les téléphones qui ne le remontent pas.
+    final insetBas = MediaQuery.of(context).viewPadding.bottom;
+    final margeBasse = (defaultTargetPlatform == TargetPlatform.android
+            ? math.max(insetBas, 48.0)
+            : insetBas) +
+        16;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mon profil'),
@@ -446,7 +455,7 @@ setState(() {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(16, 16, 16, margeBasse),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -560,7 +569,7 @@ setState(() {
                           _buildStatRow(
                             Icons.add_location_alt,
                             Colors.orange,
-                            'Brouillons (initiés)',
+                            'Brouillons',
                             _poisInitiated,
                           ),
                           const SizedBox(height: 8),
@@ -574,7 +583,7 @@ setState(() {
                           _buildStatRow(
                             Icons.verified,
                             Colors.deepPurple,
-                            'Validés par la modération',
+                            'Validées par la modération',
                             _poisValides,
                           ),
                         ],
