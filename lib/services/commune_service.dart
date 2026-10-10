@@ -14,6 +14,12 @@ class CommuneService {
   List<List<double>>? _polygoneActuel;
   DateTime? _derniereAnnonce;
 
+  // Limitation des requêtes réseau (Nominatim)
+  DateTime? _derniereVerifReseau;
+  List<double>? _dernierePositionVerifiee; // [lat, lng] de la dernière vérification réussie
+  static const Duration _intervalleVerifReseau = Duration(seconds: 30);
+  static const double _deplacementMinVerifMetres = 100.0;
+
   // Temporisation : 10 minutes entre deux annonces
   static const Duration _tempoMin = Duration(minutes: 10);
 
@@ -39,6 +45,8 @@ class CommuneService {
     _communeActuelle = null;
     _polygoneActuel = null;
     _derniereAnnonce = null;
+    _derniereVerifReseau = null;
+    _dernierePositionVerifiee = null;
   }
 
   // -------------------------------------------------------------------------
@@ -69,23 +77,55 @@ Future<void> verifierCommune({
       return;
     }
   }
+  // --- Économie de réseau et de batterie ---------------------------------
+  // 1. Toujours dans la commune déjà identifiée : aucune requête.
+  final polygoneConnu = _polygoneActuel;
+  if (_communeActuelle != null &&
+      polygoneConnu != null &&
+      _estDansPolygone(latitude, longitude, polygoneConnu)) {
+    return;
+  }
+
+  // 2. Sinon, on interroge Nominatim au plus une fois toutes les 30 s et,
+  //    si la dernière vérification avait abouti, seulement après 100 m de
+  //    déplacement. Avant ce correctif, une requête réseau partait à chaque
+  //    mise à jour GPS dès que 10 minutes s'étaient écoulées.
+  final maintenant = DateTime.now();
+  final derniereVerif = _derniereVerifReseau;
+  if (derniereVerif != null &&
+      maintenant.difference(derniereVerif) < _intervalleVerifReseau) {
+    return;
+  }
+  final dernierePos = _dernierePositionVerifiee;
+  if (dernierePos != null &&
+      _distanceMetres(dernierePos, latitude, longitude) <
+          _deplacementMinVerifMetres) {
+    return;
+  }
+  _derniereVerifReseau = maintenant;
+
     try {
       final commune = await _obtenirNomCommune(latitude, longitude);
       if (commune == null) return;
+      _dernierePositionVerifiee = [latitude, longitude]; // vérification réussie
 
       // Annonce uniquement si la commune a changé
       if (commune == _communeActuelle) return;
       _communeActuelle = commune;
+      _polygoneActuel = null; // l'ancien polygone n'est plus valable
       _derniereAnnonce = DateTime.now();
 
       // Récupérer le polygone via Nominatim
       final polygone = await _obtenirPolygoneCommune(commune, latitude, longitude);
 
+      // Toujours mémoriser le polygone (même null) : celui de la commune
+      // précédente ne doit pas court-circuiter les vérifications suivantes.
+      _polygoneActuel = polygone;
+
       if (polygone == null) {
         await _annoncerCommune(commune, null, null);
         return;
       }
-      _polygoneActuel = polygone;
 
       // Compter les POIs dans la commune
       final poisDansCommune = pointsInteret.where((poi) {
@@ -187,6 +227,15 @@ Future<void> verifierCommune({
       print('Erreur extraction polygone : $e');
       return null;
     }
+  }
+
+  /// Distance approchée (en mètres) entre un point [lat, lng] et une position.
+  /// Suffisante pour un seuil de l'ordre de la centaine de mètres.
+  double _distanceMetres(List<double> a, double lat, double lng) {
+    const metresParDegre = 111320.0;
+    final dLat = (lat - a[0]) * metresParDegre;
+    final dLng = (lng - a[1]) * metresParDegre * cos(lat * pi / 180);
+    return sqrt(dLat * dLat + dLng * dLng);
   }
 
   // -------------------------------------------------------------------------

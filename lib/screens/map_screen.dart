@@ -35,7 +35,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   final MapController _mapController = MapController();
   final PoiRepository _poiRepository = PoiRepository();
   final TtsService _ttsService = TtsService();
@@ -58,13 +58,34 @@ class _MapScreenState extends State<MapScreen> {
   late bool _isModerator;
   static const double _seuilMetres = 20.0;
 
+  // ---------------------------------------------------------------------
+  // Mise en veille automatique (économie de batterie)
+  // ---------------------------------------------------------------------
+
+  /// Durée sans déplacement après laquelle le suivi (GPS, service de premier
+  /// plan, boussole) est suspendu jusqu'à ce que l'utilisateur le réveille.
+  static const Duration _delaiVeille = Duration(minutes: 5);
+
+  /// Déplacement minimal (en mètres) par rapport à la position de référence
+  /// pour considérer que l'utilisateur est en mouvement. Filtre la dérive du
+  /// GPS à l'arrêt, qui peut atteindre plusieurs mètres.
+  static const double _seuilMouvementMetres = 30.0;
+
+  bool _enVeille = false;
+  LatLng? _positionReference;
+  DateTime _dernierMouvement = DateTime.now();
+  Timer? _veilleTimer;
+
   @override
   void initState() {
     super.initState();
 
     // Foreground service — Android uniquement (no-op sur iOS via ForegroundServiceManager)
     ForegroundServiceManager.initialiser();
-    ForegroundServiceManager.demarrer();
+    // Le service de premier plan n'est plus démarré ici : il l'est dans
+    // _demarrerSuiviPosition(), une fois la permission de localisation
+    // confirmée (sinon SecurityException native sur Android 14+).
+    WidgetsBinding.instance.addObserver(this);
 
     // Callback foreground task — Android uniquement
     if (Platform.isAndroid) {
@@ -76,16 +97,8 @@ class _MapScreenState extends State<MapScreen> {
     _isModerator = AuthService.isModerator;
     _initLocation();
 
-    // flutter_compass — iOS et Android
-    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
-      final heading = event.heading;
-      if (!mounted || heading == null) return;
-      // Sur Android le capteur émet très souvent : on ignore les variations
-      // inférieures à 2° pour ne pas reconstruire l'écran inutilement.
-      final ecart = ((heading - _currentHeading.value + 540) % 360) - 180;
-      if (ecart.abs() < 2.0) return;
-      _currentHeading.value = heading;
-    });
+    // flutter_compass — iOS et Android (suspendue en veille / arrière-plan)
+    _demarrerBoussole();
 
     _chargerPois();
   }
@@ -95,6 +108,39 @@ class _MapScreenState extends State<MapScreen> {
     final position = _currentPosition;
     if (position == null) return;
     _mapController.move(position, _mapController.camera.zoom);
+  }
+
+  /// Écoute la boussole (iOS et Android). Suspendue quand l'appli passe en
+  /// arrière-plan ou en veille : le capteur est inutile écran éteint.
+  void _demarrerBoussole() {
+    if (_compassSubscription != null) return;
+    _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
+      final heading = event.heading;
+      if (!mounted || heading == null) return;
+      // Sur Android le capteur émet très souvent : on ignore les variations
+      // inférieures à 2° pour ne pas reconstruire l'écran inutilement.
+      final ecart = ((heading - _currentHeading.value + 540) % 360) - 180;
+      if (ecart.abs() < 2.0) return;
+      _currentHeading.value = heading;
+    });
+  }
+
+  void _arreterBoussole() {
+    _compassSubscription?.cancel();
+    _compassSubscription = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Retour sur l'appli = activité : on ne se rendort pas sous les yeux
+      // de l'utilisateur.
+      _marquerActivite();
+      if (!_enVeille) _demarrerBoussole();
+    } else if (state == AppLifecycleState.paused) {
+      // Écran éteint ou appli en arrière-plan.
+      _arreterBoussole();
+    }
   }
 
   void _onReceiveTaskData(Object data) {
@@ -114,6 +160,8 @@ class _MapScreenState extends State<MapScreen> {
       FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
     }
 
+    WidgetsBinding.instance.removeObserver(this);
+    _veilleTimer?.cancel();
     _locationSubscription?.cancel();
     _compassSubscription?.cancel();
     _currentHeading.dispose();
@@ -203,16 +251,52 @@ Future<void> _initLocation() async {
       _locationReady = true;
     });
 
+    // Service de premier plan + flux GPS + surveillance d'immobilité
+    // (la permission de localisation est confirmée à ce stade)
+    await _demarrerSuiviPosition();
+
+  } catch (e) {
+    print('Erreur géolocalisation : $e');
+    _useFallbackPosition();
+  }
+}
+
+  /// Réglages du flux GPS, adaptés à chaque plateforme.
+  LocationSettings _reglagesGps() {
+    if (Platform.isIOS) {
+      // Nécessite UIBackgroundModes > location dans Info.plist pour que le
+      // suivi continue écran verrouillé.
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+        activityType: ActivityType.fitness,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+        allowBackgroundLocationUpdates: true,
+      );
+    }
+    return AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 5,
+      intervalDuration: const Duration(seconds: 5),
+    );
+  }
+
+  /// Démarre (ou redémarre) le service de premier plan, le flux GPS et la
+  /// surveillance d'immobilité. À n'appeler qu'une fois la permission de
+  /// localisation confirmée.
+  Future<void> _demarrerSuiviPosition() async {
+    // Service de premier plan (Android uniquement, no-op sur iOS)
+    await ForegroundServiceManager.demarrer();
+
     // Stream pour les mises à jour suivantes
     await _locationSubscription?.cancel();
     _locationSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 1,
-      ),
+      locationSettings: _reglagesGps(),
     ).listen((position) {
       if (!mounted) return;
       final nouvellePosition = LatLng(position.latitude, position.longitude);
+      _surveillerImmobilite(nouvellePosition);
       setState(() {
         _currentPosition = nouvellePosition;
       });
@@ -233,11 +317,124 @@ Future<void> _initLocation() async {
       _useFallbackPosition();
     });
 
-  } catch (e) {
-    print('Erreur géolocalisation : $e');
-    _useFallbackPosition();
+    // Surveillance d'immobilité : vérifiée toutes les 30 secondes
+    _dernierMouvement = DateTime.now();
+    _positionReference = _currentPosition;
+    _veilleTimer?.cancel();
+    _veilleTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _verifierVeille(),
+    );
   }
-}
+
+  /// Signale une activité de l'utilisateur (toucher, retour sur l'appli) :
+  /// repousse la mise en veille.
+  void _marquerActivite() {
+    _dernierMouvement = DateTime.now();
+  }
+
+  /// Met à jour la position de référence quand l'utilisateur s'est vraiment
+  /// déplacé (au-delà de la dérive normale du GPS).
+  void _surveillerImmobilite(LatLng position) {
+    final ref = _positionReference;
+    if (ref == null ||
+        _distance.as(LengthUnit.Meter, ref, position) > _seuilMouvementMetres) {
+      _positionReference = position;
+      _dernierMouvement = DateTime.now();
+    }
+  }
+
+  void _verifierVeille() {
+    if (!mounted || _enVeille) return;
+    // Une anecdote en cours de lecture compte comme une activité
+    if (_ttsService.estEnCoursDeLecture) {
+      _marquerActivite();
+      return;
+    }
+    if (DateTime.now().difference(_dernierMouvement) >= _delaiVeille) {
+      _mettreEnVeille();
+    }
+  }
+
+  /// Suspend tout ce qui consomme : flux GPS, service de premier plan
+  /// (la notification disparaît) et boussole.
+  Future<void> _mettreEnVeille() async {
+    if (_enVeille) return;
+    setState(() => _enVeille = true);
+    _veilleTimer?.cancel();
+    _veilleTimer = null;
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    _arreterBoussole();
+    await ForegroundServiceManager.arreter();
+  }
+
+  /// Sortie de veille sur action volontaire de l'utilisateur : repart comme
+  /// au lancement (permission, position actuelle, service, flux GPS).
+  Future<void> _reveiller() async {
+    if (!_enVeille) return;
+    setState(() => _enVeille = false);
+    _marquerActivite();
+    _demarrerBoussole();
+    await _initLocation();
+  }
+
+  void _afficherMessageVeille() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'FaYoW est en veille : touchez « Réveiller FaYoW » pour '
+          'actualiser votre position.',
+        ),
+      ),
+    );
+  }
+
+  /// Voile affiché sur la carte pendant la veille.
+  Widget _buildVeilleOverlay() {
+    return Positioned.fill(
+      child: Material(
+        color: Colors.black.withOpacity(0.7),
+        child: InkWell(
+          onTap: _reveiller,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.bedtime, color: Colors.white, size: 56),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'FaYoW est en veille',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Vous êtes immobile depuis un moment : la détection des '
+                    'anecdotes est suspendue pour économiser la batterie.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _reveiller,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Réveiller FaYoW'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   void _useFallbackPosition() {
     setState(() {
@@ -407,6 +604,10 @@ void _afficherDialogNonLu() {
 }
 
 void _onAjouterPoiClicked() {
+  if (_enVeille) {
+    _afficherMessageVeille();
+    return;
+  }
   final position = _currentPosition;
   if (position == null) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -805,6 +1006,10 @@ void _onReafficherClicked() {
 }
 
 void _reafficherParSecteur() {
+  if (_enVeille) {
+    _afficherMessageVeille();
+    return;
+  }
   final position = _currentPosition;
   if (position == null) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1147,7 +1352,10 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
 Widget build(BuildContext context) {
   return Scaffold(
     body: SafeArea(
-      child: Column(
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _marquerActivite(),
+        child: Column(
         children: [
           // Bandeau haut avec image
           SizedBox(
@@ -1203,6 +1411,7 @@ Widget build(BuildContext context) {
                         userPosition: _currentPosition!,
                         onRecenter: _recentrerSurUtilisateur,
                       ),
+                      if (_enVeille) _buildVeilleOverlay(),
                     ],
                   )
                 : const Center(child: CircularProgressIndicator()),
@@ -1350,6 +1559,7 @@ Widget build(BuildContext context) {
             ),
           ),
         ],
+        ),
       ),
     ),
   );

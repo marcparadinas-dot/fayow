@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
 
 class TtsService {
@@ -11,6 +12,21 @@ class TtsService {
     await _tts.setSpeechRate(0.5);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
+
+    if (Platform.isIOS) {
+      // Catégorie "playback" : la synthèse vocale reste audible écran verrouillé
+      // et malgré le commutateur silencieux. Requis, avec UIBackgroundModes >
+      // audio dans Info.plist, pour lire les anecdotes écran éteint sur iOS.
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        [
+          IosTextToSpeechAudioCategoryOptions.allowBluetooth,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+        ],
+      );
+    }
   }
 
 Future<void> lire(String texte) async {

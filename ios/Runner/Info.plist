@@ -27,9 +27,14 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Utilisé pour orienter le pointeur</string>
+	<string>FaYoW utilise votre position pour vous signaler les anecdotes disponibles à proximité.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>FaYoW utilise votre position pour vous signaler les anecdotes disponibles à proximité pendant que l'application est ouverte.</string>
+	<string>FaYoW utilise votre position pour vous signaler les anecdotes disponibles à proximité, y compris lorsque l'écran est verrouillé ou que l'application est en arrière-plan.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
