@@ -4,19 +4,52 @@ import 'package:permission_handler/permission_handler.dart';
 
 class LocationService {
 
-  /// À appeler une fois après connexion, avant d'ouvrir MapScreen.
-  static Future<void> demanderPermissions(BuildContext context) async {
-    // 1. Permission "en cours d'utilisation" d'abord (obligatoire avant background)
-    final locationStatus = await Permission.location.status;
-    if (!locationStatus.isGranted) {
-      await Permission.location.request();
+  /// À appeler après connexion, avant d'ouvrir MapScreen (et depuis MapScreen
+  /// quand l'utilisateur appuie sur « Autoriser la localisation »).
+  ///
+  /// Séquence :
+  ///   1. permission « pendant l'utilisation » (obligatoire) ;
+  ///   2. en cas de refus : explication, puis nouvelle demande ou ouverture
+  ///      des réglages si le système ne redemande plus ;
+  ///   3. seulement si 1 est accordée : permission « toujours » (Android,
+  ///      facultative), avec son écran d'explication.
+  ///
+  /// Retourne true si la localisation « pendant l'utilisation » est accordée,
+  /// false si l'utilisateur y renonce ou est parti dans les réglages. L'appelant
+  /// doit alors afficher un état explicite : l'appli ne peut pas fonctionner
+  /// sans position.
+  static Future<bool> demanderPermissions(BuildContext context) async {
+    // 1. Permission « en cours d'utilisation » (obligatoire avant « toujours »)
+    var statut = await Permission.location.status;
+    if (!statut.isGranted) {
+      statut = await Permission.location.request();
     }
 
-    // 2. Permission background (Android uniquement)
-    if (Platform.isAndroid) {
-      final backgroundStatus = await Permission.locationAlways.status;
-      if (!backgroundStatus.isGranted && context.mounted) {
-        await showDialog(
+    // 2. Refus : on n'enchaîne PAS sur la demande « toujours » (Android l'ignore
+    //    tant que la première n'est pas accordée). On explique, puis on
+    //    redemande, ou on envoie vers les réglages si le système ne redemande plus.
+    var tentatives = 0;
+    while (!statut.isGranted) {
+      if (!context.mounted) return false;
+      tentatives++;
+      final definitif = statut.isPermanentlyDenied || tentatives > 2;
+      final continuer = await _expliquerRefus(context, definitif: definitif);
+      if (!continuer) return false;
+      if (definitif) {
+        // Seul l'écran de réglages permet de changer d'avis. On ne peut pas
+        // attendre le retour de l'utilisateur ici : MapScreen revérifie la
+        // permission quand l'appli repasse au premier plan.
+        await openAppSettings();
+        return false;
+      }
+      statut = await Permission.location.request();
+    }
+
+    // 3. Permission « toujours » (Android uniquement) — facultative
+    if (Platform.isAndroid && context.mounted) {
+      final arrierePlan = await Permission.locationAlways.status;
+      if (!arrierePlan.isGranted && context.mounted) {
+        final accepter = await showDialog<bool>(
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
@@ -33,20 +66,65 @@ class LocationService {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx),
+                onPressed: () => Navigator.pop(ctx, false),
                 child: const Text("Refuser"),
               ),
               TextButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  await Permission.locationAlways.request();
-                },
+                onPressed: () => Navigator.pop(ctx, true),
                 child: const Text("Accepter"),
               ),
             ],
           ),
         );
+        // La demande est attendue ICI (et non dans le bouton du dialogue) :
+        // sinon MapScreen s'ouvre pendant que la demande système est encore en
+        // cours, et deux demandes simultanées peuvent bloquer l'écran.
+        if (accepter == true) {
+          await Permission.locationAlways.request();
+        }
       }
     }
+
+    return true;
+  }
+
+  /// Explique à l'utilisateur que le refus empêche l'appli de fonctionner.
+  /// Retourne true s'il veut réessayer / ouvrir les réglages, false s'il renonce.
+  static Future<bool> _expliquerRefus(
+    BuildContext context, {
+    required bool definitif,
+  }) async {
+    final choix = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Localisation nécessaire"),
+        content: Text(
+          definitif
+              ? "FaYoW a besoin de votre position pour vous signaler les "
+                "anecdotes autour de vous : sans elle, l'application ne peut "
+                "pas fonctionner.\n\n"
+                "L'autorisation a été refusée et le système ne la redemandera "
+                "plus. Vous pouvez l'activer dans les réglages de "
+                "l'application (rubrique Position)."
+              : "FaYoW a besoin de votre position pour vous signaler les "
+                "anecdotes autour de vous : sans elle, l'application ne peut "
+                "pas fonctionner.\n\n"
+                "Vous n'avez pas accordé l'autorisation. Souhaitez-vous "
+                "réessayer ?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Plus tard"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(definitif ? "Ouvrir les réglages" : "Réessayer"),
+          ),
+        ],
+      ),
+    );
+    return choix == true;
   }
 }

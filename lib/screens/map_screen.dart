@@ -12,6 +12,7 @@ import '../repository/poi_repository.dart';
 import '../services/tts_service.dart';
 import '../screens/auth_screen.dart';
 import '../services/foreground_service.dart';
+import '../services/location_service.dart';
 import '../services/auth_service.dart';
 import '../services/commune_service.dart';
 import 'profil_screen.dart';
@@ -72,6 +73,11 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   static const double _seuilMouvementMetres = 30.0;
 
   bool _enVeille = false;
+
+  // Permission de localisation absente : on affiche un écran explicite au lieu
+  // d'un chargement sans fin.
+  bool _permissionManquante = false;
+  bool _demandePermissionEnCours = false;
   LatLng? _positionReference;
   DateTime _dernierMouvement = DateTime.now();
   Timer? _veilleTimer;
@@ -136,6 +142,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
       // Retour sur l'appli = activité : on ne se rendort pas sous les yeux
       // de l'utilisateur.
       _marquerActivite();
+      if (_permissionManquante) _reverifierPermission();
       if (!_enVeille) _demarrerBoussole();
     } else if (state == AppLifecycleState.paused) {
       // Écran éteint ou appli en arrière-plan.
@@ -231,14 +238,18 @@ Future<void> _initLocation() async {
       return;
     }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.deniedForever ||
-        permission == LocationPermission.denied) {
-      _useFallbackPosition();
+    // La permission n'est PLUS demandée ici : c'est LocationService qui s'en
+    // charge, de façon séquentielle. Deux demandes simultanées pouvaient
+    // bloquer l'écran de chargement indéfiniment.
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      if (!mounted) return;
+      setState(() => _permissionManquante = true);
       return;
+    }
+    if (_permissionManquante && mounted) {
+      setState(() => _permissionManquante = false);
     }
 
     // Position initiale immédiate → la carte s'affiche tout de suite
@@ -431,6 +442,70 @@ Future<void> _initLocation() async {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// Bouton « Autoriser la localisation » de l'écran d'explication.
+  Future<void> _demanderLocalisation() async {
+    if (_demandePermissionEnCours) return;
+    _demandePermissionEnCours = true;
+    try {
+      final accordee = await LocationService.demanderPermissions(context);
+      if (!mounted) return;
+      if (accordee) {
+        setState(() => _permissionManquante = false);
+        await _initLocation();
+      }
+    } finally {
+      _demandePermissionEnCours = false;
+    }
+  }
+
+  /// Appelée au retour sur l'appli (par exemple après être passé par les
+  /// réglages du téléphone) : repart si la permission a été accordée.
+  Future<void> _reverifierPermission() async {
+    if (_demandePermissionEnCours) return;
+    final permission = await Geolocator.checkPermission();
+    if (!mounted) return;
+    if (permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always) {
+      setState(() => _permissionManquante = false);
+      await _initLocation();
+    }
+  }
+
+  /// Écran affiché à la place de la carte tant que la localisation n'est pas
+  /// autorisée.
+  Widget _buildPermissionManquante() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.location_off, size: 64, color: Colors.deepPurple),
+            const SizedBox(height: 16),
+            const Text(
+              'Localisation requise',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "FaYoW a besoin de votre position pour vous signaler les "
+              "anecdotes autour de vous. Sans cette autorisation, "
+              "l'application ne peut pas fonctionner.",
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _demanderLocalisation,
+              icon: const Icon(Icons.my_location),
+              label: const Text('Autoriser la localisation'),
+            ),
+          ],
         ),
       ),
     );
@@ -1369,7 +1444,9 @@ Widget build(BuildContext context) {
 
           // Carte
           Expanded(
-            child: _locationReady
+            child: _permissionManquante
+                ? _buildPermissionManquante()
+                : _locationReady
                 ? Stack(
                     children: [
                       FlutterMap(
