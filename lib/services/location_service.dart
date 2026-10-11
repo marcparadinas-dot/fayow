@@ -1,6 +1,20 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart' as geo;
 import 'package:permission_handler/permission_handler.dart';
+
+/// État de la permission de localisation « pendant l'utilisation ».
+enum _EtatLocalisation {
+  /// Accordée.
+  accordee,
+
+  /// Pas accordée, mais le système peut encore afficher sa fenêtre de demande.
+  refusee,
+
+  /// Refusée de façon définitive : le système ne redemandera plus, seuls les
+  /// réglages du téléphone permettent de changer d'avis.
+  definitive,
+}
 
 class LocationService {
 
@@ -20,29 +34,29 @@ class LocationService {
   /// sans position.
   static Future<bool> demanderPermissions(BuildContext context) async {
     // 1. Permission « en cours d'utilisation » (obligatoire avant « toujours »)
-    var statut = await Permission.location.status;
-    if (!statut.isGranted) {
-      statut = await Permission.location.request();
+    var etat = await _lireEtat();
+    if (etat != _EtatLocalisation.accordee) {
+      etat = await _demanderPremierPlan();
     }
 
     // 2. Refus : on n'enchaîne PAS sur la demande « toujours » (Android l'ignore
     //    tant que la première n'est pas accordée). On explique, puis on
     //    redemande, ou on envoie vers les réglages si le système ne redemande plus.
     var tentatives = 0;
-    while (!statut.isGranted) {
+    while (etat != _EtatLocalisation.accordee) {
       if (!context.mounted) return false;
       tentatives++;
-      final definitif = statut.isPermanentlyDenied || tentatives > 2;
+      final definitif = etat == _EtatLocalisation.definitive || tentatives > 2;
       final continuer = await _expliquerRefus(context, definitif: definitif);
       if (!continuer) return false;
       if (definitif) {
         // Seul l'écran de réglages permet de changer d'avis. On ne peut pas
         // attendre le retour de l'utilisateur ici : MapScreen revérifie la
         // permission quand l'appli repasse au premier plan.
-        await openAppSettings();
+        await _ouvrirReglages();
         return false;
       }
-      statut = await Permission.location.request();
+      etat = await _demanderPremierPlan();
     }
 
     // 3. Permission « toujours » (Android uniquement) — facultative
@@ -86,6 +100,55 @@ class LocationService {
     }
 
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Permission « pendant l'utilisation » — implémentation par plateforme
+  //
+  // iOS : on passe par Geolocator. Le plugin permission_handler n'active pas
+  // la localisation sur iOS tant que la macro PERMISSION_LOCATION n'est pas
+  // définie dans le Podfile : ses fonctions de localisation ne font alors
+  // rien (pas de fenêtre de demande, état toujours « refusé »). Geolocator,
+  // lui, fonctionne, et c'est déjà lui que MapScreen utilise.
+  // Android : permission_handler, inchangé.
+  // ---------------------------------------------------------------------------
+
+  static Future<_EtatLocalisation> _lireEtat() async {
+    if (Platform.isIOS) {
+      final p = await geo.Geolocator.checkPermission();
+      if (p == geo.LocationPermission.whileInUse ||
+          p == geo.LocationPermission.always) {
+        return _EtatLocalisation.accordee;
+      }
+      // Sur iOS : « denied » = jamais demandée, « deniedForever » = refusée
+      // (ou restreinte) : le système ne redemandera plus.
+      if (p == geo.LocationPermission.deniedForever) {
+        return _EtatLocalisation.definitive;
+      }
+      return _EtatLocalisation.refusee;
+    }
+
+    final s = await Permission.location.status;
+    if (s.isGranted) return _EtatLocalisation.accordee;
+    if (s.isPermanentlyDenied) return _EtatLocalisation.definitive;
+    return _EtatLocalisation.refusee;
+  }
+
+  static Future<_EtatLocalisation> _demanderPremierPlan() async {
+    if (Platform.isIOS) {
+      await geo.Geolocator.requestPermission();
+    } else {
+      await Permission.location.request();
+    }
+    return _lireEtat();
+  }
+
+  static Future<void> _ouvrirReglages() async {
+    if (Platform.isIOS) {
+      await geo.Geolocator.openAppSettings();
+    } else {
+      await openAppSettings();
+    }
   }
 
   /// Chemin à suivre dans les réglages du téléphone. Écrit en toutes lettres
