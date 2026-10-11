@@ -88,6 +88,19 @@ class LocationService {
     return true;
   }
 
+  /// Chemin à suivre dans les réglages du téléphone. Écrit en toutes lettres
+  /// car l'ouverture des réglages n'arrive pas toujours sur la page de l'appli
+  /// (notamment sur iOS tant que l'appli n'y a pas d'entrée).
+  static String get _cheminReglages => Platform.isIOS
+      ? "Pour l'activer :\n"
+        "1. Ouvrez Réglages\n"
+        "2. Touchez FaYoW (en bas de la liste)\n"
+        "3. Touchez Position, puis « Lorsque l'app est active »\n\n"
+        "Si FaYoW n'apparaît pas, allez dans Réglages › Confidentialité et "
+        "sécurité › Services de localisation › FaYoW."
+      : "Pour l'activer : Paramètres › Applications › FaYoW › Autorisations › "
+        "Position, puis « Autoriser uniquement lorsque l'appli est utilisée ».";
+
   /// Explique à l'utilisateur que le refus empêche l'appli de fonctionner.
   /// Retourne true s'il veut réessayer / ouvrir les réglages, false s'il renonce.
   static Future<bool> _expliquerRefus(
@@ -105,8 +118,7 @@ class LocationService {
                 "anecdotes autour de vous : sans elle, l'application ne peut "
                 "pas fonctionner.\n\n"
                 "L'autorisation a été refusée et le système ne la redemandera "
-                "plus. Vous pouvez l'activer dans les réglages de "
-                "l'application (rubrique Position)."
+                "plus.\n\n" + _cheminReglages
               : "FaYoW a besoin de votre position pour vous signaler les "
                 "anecdotes autour de vous : sans elle, l'application ne peut "
                 "pas fonctionner.\n\n"
