@@ -297,6 +297,6 @@ Future<void> _annoncerCommune(String commune, int? total, int? lus) async {
     }
 
     print('Annonce commune : $message');
-    await _tts.speak(message);
+    await _tts.speak(message, focus: true);
   }
 }
