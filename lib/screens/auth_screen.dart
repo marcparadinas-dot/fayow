@@ -134,6 +134,42 @@ if (mounted) {
 }
 
   // -------------------------------------------------------------------------
+  // Mot de passe oublié
+  // -------------------------------------------------------------------------
+
+  Future<void> _reinitialiserMotDePasse() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() {
+        _errorMessage = 'Saisissez d\'abord votre adresse email dans le champ ci-dessus.';
+      });
+      return;
+    }
+
+    setState(() { _isLoading = true; _errorMessage = ''; });
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      // Message volontairement neutre : on ne révèle pas si un compte existe.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Si un compte existe pour $email, un email de réinitialisation '
+            'vient d\'être envoyé. Pensez à vérifier vos courriers indésirables.',
+          ),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() { _errorMessage = _traduireErreur(e.code); });
+    } catch (e) {
+      if (mounted) setState(() { _errorMessage = e.toString(); });
+    } finally {
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Traduction des erreurs Firebase
   // -------------------------------------------------------------------------
 
@@ -153,6 +189,10 @@ if (mounted) {
         return 'Trop de tentatives. Réessayez plus tard.';
       case 'invalid-credential':
         return 'Email ou mot de passe incorrect.';
+      case 'missing-email':
+        return 'Veuillez saisir votre adresse email.';
+      case 'network-request-failed':
+        return 'Problème de connexion réseau. Vérifiez votre connexion et réessayez.';
       default:
         return 'Erreur : $code';
     }
@@ -314,7 +354,19 @@ if (mounted) {
                           onSubmitted: (_) =>
                               _isInscription ? _signUp() : _signIn(),
                         ),
-                        const SizedBox(height: 16),
+
+                        // Mot de passe oublié (connexion uniquement)
+                        if (_isInscription)
+                          const SizedBox(height: 16)
+                        else
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed:
+                                  _isLoading ? null : _reinitialiserMotDePasse,
+                              child: const Text('Mot de passe oublié ?'),
+                            ),
+                          ),
 
                         // Message d'erreur
                         if (_errorMessage.isNotEmpty)
