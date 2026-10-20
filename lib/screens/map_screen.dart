@@ -15,6 +15,8 @@ import '../services/foreground_service.dart';
 import '../services/location_service.dart';
 import '../services/auth_service.dart';
 import '../services/commune_service.dart';
+import '../services/settings_service.dart';
+import '../screens/settings_screen.dart';
 import 'profil_screen.dart';
 import '../services/score_service.dart';
 import 'classement_screen.dart';
@@ -28,6 +30,7 @@ import '../widgets/map_compass_button.dart';
 import '../widgets/direction_marker.dart';
 import '../widgets/map_recenter_button.dart';
 import '../widgets/confirmation_soumission.dart';
+
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -1433,15 +1436,42 @@ Widget build(BuildContext context) {
         child: Column(
         children: [
           // Bandeau haut avec image
-          SizedBox(
-            width: double.infinity,
-            height: 110,
-            child: Image.asset(
-              'assets/images/fayow_bandeau_haut.png',
-              fit: BoxFit.cover,
-            ),
+          //SizedBox(
+          //  width: double.infinity,
+          //  height: 110,
+          //  child: Image.asset(
+          //    'assets/images/fayow_bandeau_haut.png',
+          //    fit: BoxFit.cover,
+          //  ),
+          //),
+Stack(
+  children: [
+    SizedBox(
+      width: double.infinity,
+      height: 110,
+      child: Image.asset(
+        'assets/images/fayow_bandeau_haut.png',
+        fit: BoxFit.cover,
+      ),
+    ),
+    Positioned(
+      top: 6,
+      right: 6,
+      child: Material(
+        color: Colors.black38,
+        shape: const CircleBorder(),
+        child: IconButton(
+          icon: const Icon(Icons.settings, color: Colors.white),
+          tooltip: 'Paramètres',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
           ),
-
+        ),
+      ),
+    ),
+  ],
+),
           // Carte
           Expanded(
             child: _permissionManquante
@@ -1457,13 +1487,22 @@ Widget build(BuildContext context) {
                           onTap: (tapPosition, latLng) =>
                               _onCarteTappee(latLng),
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
-                            subdomains: const ['a', 'b', 'c', 'd'],
-                            userAgentPackageName: 'com.example.fayow',
-                          ),
+                children: [
+ListenableBuilder(
+  listenable: SettingsService.instance,
+  builder: (context, _) => TileLayer(
+    key: ValueKey(SettingsService.instance.mapStyle),
+    urlTemplate: SettingsService.instance.mapStyle.urlTemplate('cb1_2h5p_1_cd000744af8ad5c0615a5ea8'),
+    subdomains: const ['a', 'b', 'c', 'd'],
+    userAgentPackageName: 'com.example.fayow',
+  ),
+),
+                    //TileLayer(
+                      //urlTemplate:
+                        //  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
+                      //subdomains: const ['a', 'b', 'c', 'd'],
+                      //userAgentPackageName: 'com.example.fayow',
+                    //),
                           CircleLayer(circles: _buildCercles()),
                           MarkerLayer(
                             markers: [
@@ -1623,8 +1662,8 @@ Widget build(BuildContext context) {
               );
             },
             style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.deepPurple.withOpacity(0.85),
-            foregroundColor: Colors.white,
+              backgroundColor: Colors.deepPurple.withOpacity(0.85),
+              foregroundColor: Colors.white,
             ),
             child: const FittedBox(
             fit: BoxFit.scaleDown,

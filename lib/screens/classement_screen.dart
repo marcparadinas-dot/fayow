@@ -163,8 +163,8 @@ class _ClassementScreenState extends State<ClassementScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Classement'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+        //backgroundColor: Colors.deepPurple,
+        //foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline),

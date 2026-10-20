@@ -13,6 +13,7 @@ import '../models/poi_models.dart';
 import '../repository/poi_repository.dart';
 import '../services/auth_service.dart';
 import '../services/score_service.dart';
+import '../services/settings_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
 import '../widgets/map_compass_button.dart';
@@ -1029,12 +1030,21 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
             onLongPress: (tapPosition, latLng) => _onCarteLongPress(latLng),
           ),
           children: [
-            TileLayer(
-              urlTemplate:
-                  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
-              subdomains: const ['a', 'b', 'c', 'd'],
-              userAgentPackageName: 'com.example.fayow',
-            ),
+ListenableBuilder(
+  listenable: SettingsService.instance,
+  builder: (context, _) => TileLayer(
+    key: ValueKey(SettingsService.instance.mapStyle),
+    urlTemplate: SettingsService.instance.mapStyle.urlTemplate('cb1_2h5p_1_cd000744af8ad5c0615a5ea8'),
+    subdomains: const ['a', 'b', 'c', 'd'],
+    userAgentPackageName: 'com.example.fayow',
+  ),
+),
+            //TileLayer(
+              //urlTemplate:
+                //  'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=cb1_2h5p_1_cd000744af8ad5c0615a5ea8',
+              //subdomains: const ['a', 'b', 'c', 'd'],
+              //userAgentPackageName: 'com.example.fayow',
+            //),
             CircleLayer(circles: _buildCercles()),
             MarkerLayer(
               markers: [
@@ -1124,9 +1134,13 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
   Widget build(BuildContext context) {
     return Scaffold(
 appBar: AppBar(
-  title: const Text('Mes anecdotes'),
-  backgroundColor: Colors.deepPurple,
-  foregroundColor: Colors.white,
+  title: const FittedBox(
+  fit: BoxFit.scaleDown,
+  alignment: Alignment.centerLeft,
+  child: Text('Mes anecdotes'),
+),
+  //backgroundColor: Theme.of(context).colorScheme.primary,
+  //foregroundColor: Theme.of(context).colorScheme.onPrimary,
   actions: [
 
             SizedBox(
@@ -1174,8 +1188,14 @@ appBar: AppBar(
                   unselectedLabelColor: Colors.white70,
                   dividerColor: Colors.transparent,
                   tabs: const [
-                    Tab(icon: Icon(Icons.map), text: 'Carte'),
-                    Tab(icon: Icon(Icons.list), text: 'Liste'),
+                    Tab(
+                    icon: Icon(Icons.map),
+                    child: Text('Carte', textScaler: TextScaler.noScaling),
+                    ),
+                    Tab(
+                    icon: Icon(Icons.list),
+                    child: Text('Liste', textScaler: TextScaler.noScaling),
+                  ),
                   ],
                 ),
               ),

@@ -415,8 +415,10 @@ setState(() {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mon profil'),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+        //backgroundColor: Colors.deepPurple,
+        //foregroundColor: Colors.white,
+        //backgroundColor: Theme.of(context).colorScheme.primary,
+        //foregroundColor: Theme.of(context).colorScheme.onPrimary,
   actions: [
 
             SizedBox(
