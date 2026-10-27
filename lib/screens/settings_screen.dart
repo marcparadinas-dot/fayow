@@ -20,16 +20,11 @@ class SettingsScreen extends StatelessWidget {
             children: [
               const _SectionTitle('Apparence'),
 
-              // --- Mode clair / sombre ---
+              // --- Clair / sombre ---
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: SegmentedButton<ThemeMode>(
                   segments: const [
-                    ButtonSegment(
-                      value: ThemeMode.system,
-                      icon: Icon(Icons.brightness_auto),
-                      label: Text('Auto'),
-                    ),
                     ButtonSegment(
                       value: ThemeMode.light,
                       icon: Icon(Icons.light_mode),
@@ -42,11 +37,12 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ],
                   selected: {s.themeMode},
-                  onSelectionChanged: (v) => s.setThemeMode(v.first),
+                  onSelectionChanged: (v) =>
+                      s.setDarkMode(v.first == ThemeMode.dark),
                 ),
               ),
 
-              // --- Couleur d'accent ---
+              // --- Couleur principale ---
               const _SubTitle('Couleur principale'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -54,11 +50,11 @@ class SettingsScreen extends StatelessWidget {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    for (var i = 0; i < settingsColors.length; i++)
+                    for (final accent in settingsColors)
                       _ColorDot(
-                        accent: settingsColors[i],
-                        selected: s.colorIndex == i,
-                        onTap: () => s.setColorIndex(i),
+                        accent: accent,
+                        selected: s.colorId == accent.id,
+                        onTap: () => s.setColor(accent.id),
                       ),
                   ],
                 ),

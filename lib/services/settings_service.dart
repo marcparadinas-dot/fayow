@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Fonds de carte proposés.
-///
-/// Les URLs CARTO suivent le format de ton TileLayer actuel
-/// ({s} + paramètre ?key=). À utiliser avec subdomains: ['a','b','c','d'].
-/// ⚠️ « voyager » n'est pas encore testé avec ta clé : vérifie qu'il s'affiche.
+/// Fonds de carte proposés (CARTO, même format que ton TileLayer d'origine :
+/// sous-domaines {s} + paramètre ?key=). À utiliser avec
+/// subdomains: ['a', 'b', 'c', 'd'].
 enum MapStyle {
   clair('Clair', Icons.light_mode_outlined),
   sombre('Sombre', Icons.dark_mode_outlined),
-  voyager('Voyager (coloré)', Icons.explore_outlined),
-  osm('OpenStreetMap', Icons.public);
+  coloree('Colorée', Icons.palette_outlined);
 
   const MapStyle(this.label, this.icon);
 
@@ -24,10 +21,8 @@ enum MapStyle {
         return 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png?key=$cartoApiKey';
       case MapStyle.sombre:
         return 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png?key=$cartoApiKey';
-      case MapStyle.voyager:
+      case MapStyle.coloree:
         return 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=$cartoApiKey';
-      case MapStyle.osm:
-        return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
     }
   }
 }
@@ -41,32 +36,26 @@ class FontChoice {
 }
 
 const List<FontChoice> settingsFonts = [
-  FontChoice(null, 'Par défaut (système)'),
-  FontChoice('Lato', 'Lato'),
+  FontChoice(null, 'Par défaut'),
   FontChoice('Nunito', 'Nunito'),
-  FontChoice('Merriweather', 'Merriweather (serif)'),
   FontChoice('Lora', 'Lora (serif)'),
-  FontChoice('Atkinson Hyperlegible', 'Atkinson Hyperlegible (lisibilité)'),
 ];
 
 /// Une couleur d'accent proposée.
 class AccentColor {
-  const AccentColor(this.label, this.color);
+  const AccentColor(this.id, this.label, this.color);
 
+  final String id;
   final String label;
   final Color color;
 }
 
 const List<AccentColor> settingsColors = [
-  AccentColor('Violet (défaut)', Color(0xFF673AB7)),
-  AccentColor('Bleu', Color(0xFF1565C0)),
-  AccentColor('Turquoise', Color(0xFF00897B)),
-  AccentColor('Vert', Color(0xFF2E7D32)),
-  AccentColor('Orange', Color(0xFFEF6C00)),
-  AccentColor('Rouge', Color(0xFFC62828)),
-  AccentColor('Rose', Color(0xFFAD1457)),
-  AccentColor('Prune', Color(0xFF6A1B9A)),
-  AccentColor('Ardoise', Color(0xFF455A64)),
+  AccentColor('violet', 'Violet (défaut)', Color(0xFF673AB7)),
+  AccentColor('bleu', 'Bleu', Color(0xFF1565C0)),
+  AccentColor('turquoise', 'Turquoise', Color(0xFF00897B)),
+  AccentColor('orange', 'Orange', Color(0xFFEF6C00)),
+  AccentColor('rose', 'Rose', Color(0xFFAD1457)),
 ];
 
 /// Paramètres utilisateur de FaYoW : état observable + persistance locale.
@@ -75,23 +64,25 @@ class SettingsService extends ChangeNotifier {
 
   static final SettingsService instance = SettingsService._();
 
-  static const _kThemeMode = 'settings.themeMode';
-  static const _kColorIndex = 'settings.colorIndex';
+  static const _kDarkMode = 'settings.darkMode';
+  static const _kColorId = 'settings.colorId';
   static const _kFontFamily = 'settings.fontFamily';
   static const _kTextScale = 'settings.textScale';
   static const _kMapStyle = 'settings.mapStyle';
 
   SharedPreferences? _prefs;
 
-  ThemeMode _themeMode = ThemeMode.system;
-  int _colorIndex = 0;
+  bool _darkMode = false;
+  String _colorId = 'violet';
   String? _fontFamily;
   double _textScale = 1.0;
   MapStyle _mapStyle = MapStyle.clair;
 
-  ThemeMode get themeMode => _themeMode;
-  int get colorIndex => _colorIndex;
-  Color get seedColor => settingsColors[_colorIndex].color;
+  bool get darkMode => _darkMode;
+  ThemeMode get themeMode => _darkMode ? ThemeMode.dark : ThemeMode.light;
+  String get colorId => _colorId;
+  Color get seedColor =>
+      settingsColors.firstWhere((c) => c.id == _colorId).color;
   String? get fontFamily => _fontFamily;
   double get textScale => _textScale;
   MapStyle get mapStyle => _mapStyle;
@@ -100,11 +91,12 @@ class SettingsService extends ChangeNotifier {
   Future<void> load() async {
     final p = _prefs = await SharedPreferences.getInstance();
 
-    final themeIdx = p.getInt(_kThemeMode) ?? 0;
-    _themeMode = ThemeMode.values[themeIdx.clamp(0, ThemeMode.values.length - 1)];
+    _darkMode = p.getBool(_kDarkMode) ?? false;
 
-    final colorIdx = p.getInt(_kColorIndex) ?? 0;
-    _colorIndex = colorIdx.clamp(0, settingsColors.length - 1);
+    final colorId = p.getString(_kColorId);
+    _colorId = settingsColors.any((c) => c.id == colorId)
+        ? colorId!
+        : settingsColors.first.id;
 
     final font = p.getString(_kFontFamily);
     _fontFamily = settingsFonts.any((f) => f.family == font) ? font : null;
@@ -117,16 +109,17 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setThemeMode(ThemeMode mode) async {
-    _themeMode = mode;
+  Future<void> setDarkMode(bool value) async {
+    _darkMode = value;
     notifyListeners();
-    await _prefs?.setInt(_kThemeMode, mode.index);
+    await _prefs?.setBool(_kDarkMode, value);
   }
 
-  Future<void> setColorIndex(int index) async {
-    _colorIndex = index.clamp(0, settingsColors.length - 1);
+  Future<void> setColor(String id) async {
+    if (!settingsColors.any((c) => c.id == id)) return;
+    _colorId = id;
     notifyListeners();
-    await _prefs?.setInt(_kColorIndex, _colorIndex);
+    await _prefs?.setString(_kColorId, id);
   }
 
   Future<void> setFontFamily(String? family) async {
@@ -152,16 +145,16 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> reset() async {
-    _themeMode = ThemeMode.system;
-    _colorIndex = 0;
+    _darkMode = false;
+    _colorId = settingsColors.first.id;
     _fontFamily = null;
     _textScale = 1.0;
     _mapStyle = MapStyle.clair;
     notifyListeners();
     final p = _prefs;
     if (p != null) {
-      await p.remove(_kThemeMode);
-      await p.remove(_kColorIndex);
+      await p.remove(_kDarkMode);
+      await p.remove(_kColorId);
       await p.remove(_kFontFamily);
       await p.remove(_kTextScale);
       await p.remove(_kMapStyle);

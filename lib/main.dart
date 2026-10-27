@@ -13,7 +13,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  // Charger les paramètres utilisateur (thème, police, carte...)
+  // Charger les paramètres utilisateur (thème, couleur, police, taille du texte, carte)
   await SettingsService.instance.load();
 
   // Forcer le mode portrait
