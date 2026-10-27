@@ -1559,44 +1559,9 @@ ListenableBuilder(
                 : const Center(child: CircularProgressIndicator()),
           ),
 
-          // Boutons Modération + Ajouter (au-dessus de la barre du bas)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-            child: Row(
-              children: [
-                if (_isModerator)
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: _afficherModerationDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.indigo,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Modération',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                if (_isModerator) const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _onAjouterPoiClicked,
-                    icon: const Icon(Icons.add_location_alt, size: 16),
-                    label: const Text('Ajouter Anecdote',
-                        style: TextStyle(fontSize: 12)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 192, 127, 42),
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
                     // Bandeau bas : image en fond, boutons par-dessus
           Container(
             width: double.infinity,
-            height: 110,
             decoration: const BoxDecoration(
               image: DecorationImage(
                 image: AssetImage('assets/images/fayow_bandeau_bas.png'),
@@ -1604,100 +1569,148 @@ ListenableBuilder(
               ),
             ),
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-            child: 
-            Row(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                  onPressed: _onReafficherClicked,
-                  style: (_modeReaffichage
-                    ? ElevatedButton.styleFrom(backgroundColor: Colors.orange)
-                    : ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromRGBO(230, 157, 217, 1).withOpacity(0.85),
-                  foregroundColor: Colors.white,
-                ))
-                .copyWith(
-                  textStyle: WidgetStateProperty.all(
-                  const TextStyle(fontSize: 11),
-                  ),
+                // Boutons Modération + Ajouter
+                Row(
+                  children: [
+                    if (_isModerator)
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _afficherModerationDialog,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Modération',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                      ),
+                    if (_isModerator) const SizedBox(width: 8),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _onAjouterPoiClicked,
+                        icon: const Icon(Icons.add_location_alt, size: 16),
+                        label: const Text('Ajouter Anecdote',
+                            style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              const Color.fromARGB(255, 192, 127, 42),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                  child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(_modeReaffichage ? 'Retour' : 'Réafficher\nanecdotes'),
-                  ),
-              ),
-        ),
-        const SizedBox(width: 4),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () async {
-              if (_currentPosition == null) return;
-                await Navigator.push(
-                  context,
-                   MaterialPageRoute(
-                     builder: (_) => ParcourirScreen(
-                     positionInitiale: _currentPosition!,
-                     pointsInteret: _pointsInteret,
-                     poisLusIds: _poisLusIds,
-                     ),
-                   ),
-               );
-                   // Recharger les POIs au retour de ParcourirScreen
-              await _chargerPois();
-              },
-              style: ElevatedButton.styleFrom(
-              backgroundColor: const Color.fromRGBO(18, 119, 63, 1).withOpacity(0.85),
-              foregroundColor: Colors.white,
-              ).copyWith(
-                textStyle: WidgetStateProperty.all(
-                  const TextStyle(fontSize: 11),
+                const SizedBox(height: 6),
+
+                // Réafficher / Voir mes anecdotes / Profil
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _onReafficherClicked,
+                        style: (_modeReaffichage
+                                ? ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange)
+                                : ElevatedButton.styleFrom(
+                                    backgroundColor: const Color.fromRGBO(
+                                            230, 157, 217, 1)
+                                        .withOpacity(0.85),
+                                    foregroundColor: Colors.white,
+                                  ))
+                            .copyWith(
+                          textStyle: WidgetStateProperty.all(
+                            const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(_modeReaffichage
+                              ? 'Retour'
+                              : 'Réafficher\nanecdotes'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (_currentPosition == null) return;
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ParcourirScreen(
+                                positionInitiale: _currentPosition!,
+                                pointsInteret: _pointsInteret,
+                                poisLusIds: _poisLusIds,
+                              ),
+                            ),
+                          );
+                          // Recharger les POIs au retour de ParcourirScreen
+                          await _chargerPois();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              const Color.fromRGBO(18, 119, 63, 1)
+                                  .withOpacity(0.85),
+                          foregroundColor: Colors.white,
+                        ).copyWith(
+                          textStyle: WidgetStateProperty.all(
+                            const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Voir mes\nanecdotes'),
+                        ),
+                      ),
+                    ),
+                    /*
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ClassementScreen()),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color.fromRGBO(230, 131, 18, 1)
+                              .withOpacity(0.85),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Classement'),
+                        ),
+                      ),
+                    ),
+                    */
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ProfilScreen()),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple.withOpacity(0.85),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Profil'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              child: const FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text('Voir mes\nanecdotes'),
-              ),
-            ),
-          ),
-        /*
-        const SizedBox(width: 4),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ClassementScreen()),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromRGBO(230, 131, 18, 1).withOpacity(0.85),
-                foregroundColor: Colors.white,
-              ),
-              child: const FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text('Classement'),
-              ),
-            ),
-          ),
-          */
-        const SizedBox(width: 4),
-          Expanded(
-            child: ElevatedButton(
-            onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ProfilScreen()),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.deepPurple.withOpacity(0.85),
-              foregroundColor: Colors.white,
-            ),
-            child: const FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text('Profil'),
-            ),
-            ),
-          ),
-    ],
+              ],
             ),
           ),
         ],

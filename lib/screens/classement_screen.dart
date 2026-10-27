@@ -259,8 +259,8 @@ class _ClassementScreenState extends State<ClassementScreen> {
                                             ? FontWeight.bold
                                             : FontWeight.normal,
                                         color: estMoi
-                                            ? Colors.deepPurple
-                                            : null,
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Theme.of(context).colorScheme.onSurface,
                                       ),
                                     ),
                                     if (estMoi) ...[
@@ -298,8 +298,8 @@ class _ClassementScreenState extends State<ClassementScreen> {
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
                                     color: estMoi
-                                        ? Colors.deepPurple
-                                        : Colors.black87,
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context).colorScheme.onSurface,
                                   ),
                                 ),
                               ),
