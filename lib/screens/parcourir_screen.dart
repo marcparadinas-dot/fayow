@@ -549,6 +549,30 @@ void _afficherDialogNonLu() {
         content: TextField(controller: textController, maxLines: 4),
         actions: [
           TextButton(
+            onPressed: () async {
+              final confirme = await confirmerSuppressionBrouillon(context);
+              if (!confirme || !context.mounted) return;
+              Navigator.pop(context);
+              try {
+                await _poiRepository.supprimerPoi(poi.id);
+                _recharger();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Brouillon supprimé')),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erreur : $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Supprimer',
+                style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Annuler'),
           ),

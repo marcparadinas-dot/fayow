@@ -5,89 +5,89 @@ class PoiRepository {
   final _db = FirebaseFirestore.instance;
 
   // Charger les POIs validés (visibles par tous)
-Future<List<PointInteret>> chargerPoisValides() async {
-  try {
-    final snapshot = await _db
-        .collection('pois')
-        .where('status', isEqualTo: 'validated')
-        .get();
-    return snapshot.docs
-        .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
-        .toList();
-  } catch (e) {
-    print('Erreur chargerPoisValides : $e');
-    return [];
+  Future<List<PointInteret>> chargerPoisValides() async {
+    try {
+      final snapshot = await _db
+          .collection('pois')
+          .where('status', isEqualTo: 'validated')
+          .get();
+      return snapshot.docs
+          .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
+          .toList();
+    } catch (e) {
+      print('Erreur chargerPoisValides : $e');
+      return [];
+    }
   }
-}
 
-Future<List<PointInteret>> chargerMesPois(String uid) async {
-  try {
-    final snapshot = await _db
-        .collection('pois')
-        .where('creatorUid', isEqualTo: uid)
-        .where('status', whereIn: ['initiated', 'proposed'])
-        .get();
-    return snapshot.docs
-        .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
-        .toList();
-  } catch (e) {
-    print('Erreur chargerMesPois : $e');
-    return [];
+  Future<List<PointInteret>> chargerMesPois(String uid) async {
+    try {
+      final snapshot = await _db
+          .collection('pois')
+          .where('creatorUid', isEqualTo: uid)
+          .where('status', whereIn: ['initiated', 'proposed'])
+          .get();
+      return snapshot.docs
+          .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
+          .toList();
+    } catch (e) {
+      print('Erreur chargerMesPois : $e');
+      return [];
+    }
   }
-}
 
   // Charger les POIs lus par l'utilisateur
-Future<Set<String>> chargerPoisLus(String uid) async {
-  try {
-    final snapshot = await _db
-        .collection('users')
-        .doc(uid)
-        .collection('readPois') // ← était 'poisLus'
-        .get();
-    return snapshot.docs.map((doc) => doc.id).toSet();
-  } catch (e) {
-    print('Erreur chargerPoisLus : $e');
-    return {};
-  }
-}
-
-// Charger la date de lecture (readAt) de chaque POI lu par l'utilisateur
-Future<Map<String, DateTime>> chargerDatesLecture(String uid) async {
-  try {
-    final snapshot = await _db
-        .collection('users')
-        .doc(uid)
-        .collection('readPois')
-        .get();
-    final Map<String, DateTime> dates = {};
-    for (final doc in snapshot.docs) {
-      final readAt = doc.data()['readAt'];
-      if (readAt is Timestamp) {
-        dates[doc.id] = readAt.toDate();
-      }
+  Future<Set<String>> chargerPoisLus(String uid) async {
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('readPois')
+          .get();
+      return snapshot.docs.map((doc) => doc.id).toSet();
+    } catch (e) {
+      print('Erreur chargerPoisLus : $e');
+      return {};
     }
-    return dates;
-  } catch (e) {
-    print('Erreur chargerDatesLecture : $e');
-    return {};
   }
-}
 
-// Charger tous les POIs proposés (pour le modérateur)
-Future<List<PointInteret>> chargerTousPoisProposed() async {
-  try {
-    final snapshot = await _db
-        .collection('pois')
-        .where('status', isEqualTo: 'proposed')
-        .get();
-    return snapshot.docs
-        .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
-        .toList();
-  } catch (e) {
-    print('Erreur chargerTousPoisProposed : $e');
-    return [];
+  // Charger la date de lecture (readAt) de chaque POI lu par l'utilisateur
+  Future<Map<String, DateTime>> chargerDatesLecture(String uid) async {
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('readPois')
+          .get();
+      final Map<String, DateTime> dates = {};
+      for (final doc in snapshot.docs) {
+        final readAt = doc.data()['readAt'];
+        if (readAt is Timestamp) {
+          dates[doc.id] = readAt.toDate();
+        }
+      }
+      return dates;
+    } catch (e) {
+      print('Erreur chargerDatesLecture : $e');
+      return {};
+    }
   }
-}
+
+  // Charger tous les POIs proposés (pour le modérateur)
+  Future<List<PointInteret>> chargerTousPoisProposed() async {
+    try {
+      final snapshot = await _db
+          .collection('pois')
+          .where('status', isEqualTo: 'proposed')
+          .get();
+      return snapshot.docs
+          .map((doc) => PointInteret.fromFirestore(doc.id, doc.data()))
+          .toList();
+    } catch (e) {
+      print('Erreur chargerTousPoisProposed : $e');
+      return [];
+    }
+  }
 
   // Mettre à jour un POI
   Future<void> mettreAJourPoi(
@@ -113,12 +113,17 @@ Future<List<PointInteret>> chargerTousPoisProposed() async {
   }
 
   Future<String?> chargerEmailUtilisateur(String uid) async {
-  try {
-    final doc = await _db.collection('users').doc(uid).get();
-    return doc.data()?['email'] as String?;
-  } catch (e) {
-    print('Erreur chargerEmailUtilisateur : $e');
-    return null;
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      return doc.data()?['email'] as String?;
+    } catch (e) {
+      print('Erreur chargerEmailUtilisateur : $e');
+      return null;
+    }
   }
-}
+
+  // Supprimer un POI (brouillon)
+  Future<void> supprimerPoi(String poiId) async {
+    await _db.collection('pois').doc(poiId).delete();
+  }
 }

@@ -1,5 +1,27 @@
 import 'package:flutter/material.dart';
 
+/// Demande confirmation avant la suppression d'un brouillon
+Future<bool> confirmerSuppressionBrouillon(BuildContext context) async {
+  final resultat = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Supprimer ce brouillon ?'),
+      content: const Text('Cette action est définitive.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Non'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Supprimer',
+              style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+  return resultat ?? false;
+}
 /// Demande confirmation avant l'envoi d'une anecdote à la modération, en
 /// rappelant le texte concerné. Renvoie true uniquement si l'utilisateur
 /// répond "Oui" (fermer la fenêtre ou répondre "Non" renvoie false).

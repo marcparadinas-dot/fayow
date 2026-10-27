@@ -842,6 +842,32 @@ void _afficherDialogEditionPoi(PointInteret poi) {
         maxLines: 4,
       ),
       actions: [
+        // Supprimer
+        TextButton(
+          onPressed: () async {
+            final confirme = await confirmerSuppressionBrouillon(context);
+            if (!confirme || !context.mounted) return;
+            Navigator.pop(context);
+
+            try {
+              await _poiRepository.supprimerPoi(poi.id);
+              await _chargerPois();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Brouillon supprimé')),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Erreur : $e')),
+                );
+              }
+            }
+          },
+          child: const Text('Supprimer',
+              style: TextStyle(color: Colors.red)),
+        ),
         // Annuler
         TextButton(
           onPressed: () => Navigator.pop(context),
