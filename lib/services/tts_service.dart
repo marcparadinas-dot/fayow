@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'settings_service.dart';
 
 class TtsService {
   final FlutterTts _tts = FlutterTts();
@@ -76,6 +77,7 @@ class TtsService {
     print('=== TTS speak() lancé ===');
     // focus: true → demande le focus audio Android (atténuation des autres
     // sources) ; sans effet sur iOS, géré par la catégorie audio ci-dessus.
+    await SettingsService.instance.appliquerVoix(_tts);
     await _tts.speak(texte, focus: true);
     print('=== TTS speak() retourné, attente completer ===');
     await completer.future;

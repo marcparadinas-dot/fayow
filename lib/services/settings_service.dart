@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -68,6 +69,8 @@ class SettingsService extends ChangeNotifier {
   static const _kColorId = 'settings.colorId';
   static const _kFontFamily = 'settings.fontFamily';
   static const _kTextScale = 'settings.textScale';
+  static const _kVoiceName = 'settings.voiceName';
+  static const _kVoiceLocale = 'settings.voiceLocale';
   static const _kMapStyle = 'settings.mapStyle';
 
   SharedPreferences? _prefs;
@@ -76,6 +79,8 @@ class SettingsService extends ChangeNotifier {
   String _colorId = 'violet';
   String? _fontFamily;
   double _textScale = 1.0;
+  String? _voiceName;
+  String? _voiceLocale;
   MapStyle _mapStyle = MapStyle.clair;
 
   bool get darkMode => _darkMode;
@@ -85,6 +90,10 @@ class SettingsService extends ChangeNotifier {
       settingsColors.firstWhere((c) => c.id == _colorId).color;
   String? get fontFamily => _fontFamily;
   double get textScale => _textScale;
+
+  /// Voix de lecture choisie (null → voix par défaut du système en fr-FR).
+  String? get voiceName => _voiceName;
+  String? get voiceLocale => _voiceLocale;
   MapStyle get mapStyle => _mapStyle;
 
   /// À appeler une fois dans main(), avant runApp().
@@ -102,6 +111,13 @@ class SettingsService extends ChangeNotifier {
     _fontFamily = settingsFonts.any((f) => f.family == font) ? font : null;
 
     _textScale = (p.getDouble(_kTextScale) ?? 1.0).clamp(0.85, 1.4);
+
+    final voiceName = p.getString(_kVoiceName);
+    final voiceLocale = p.getString(_kVoiceLocale);
+    if (voiceName != null && voiceLocale != null) {
+      _voiceName = voiceName;
+      _voiceLocale = voiceLocale;
+    }
 
     final mapIdx = p.getInt(_kMapStyle) ?? 0;
     _mapStyle = MapStyle.values[mapIdx.clamp(0, MapStyle.values.length - 1)];
@@ -138,6 +154,34 @@ class SettingsService extends ChangeNotifier {
     await _prefs?.setDouble(_kTextScale, _textScale);
   }
 
+  Future<void> setVoice(String? name, String? locale) async {
+    final p = _prefs;
+    if (name != null && locale != null) {
+      _voiceName = name;
+      _voiceLocale = locale;
+      notifyListeners();
+      await p?.setString(_kVoiceName, name);
+      await p?.setString(_kVoiceLocale, locale);
+    } else {
+      _voiceName = null;
+      _voiceLocale = null;
+      notifyListeners();
+      await p?.remove(_kVoiceName);
+      await p?.remove(_kVoiceLocale);
+    }
+  }
+
+  /// Applique la langue et la voix choisies à une instance FlutterTts.
+  /// À appeler juste avant chaque speak() (TtsService, CommuneService).
+  Future<void> appliquerVoix(FlutterTts tts) async {
+    await tts.setLanguage('fr-FR');
+    final name = _voiceName;
+    final locale = _voiceLocale;
+    if (name != null && locale != null) {
+      await tts.setVoice({'name': name, 'locale': locale});
+    }
+  }
+
   Future<void> setMapStyle(MapStyle style) async {
     _mapStyle = style;
     notifyListeners();
@@ -149,6 +193,8 @@ class SettingsService extends ChangeNotifier {
     _colorId = settingsColors.first.id;
     _fontFamily = null;
     _textScale = 1.0;
+    _voiceName = null;
+    _voiceLocale = null;
     _mapStyle = MapStyle.clair;
     notifyListeners();
     final p = _prefs;
@@ -157,6 +203,8 @@ class SettingsService extends ChangeNotifier {
       await p.remove(_kColorId);
       await p.remove(_kFontFamily);
       await p.remove(_kTextScale);
+      await p.remove(_kVoiceName);
+      await p.remove(_kVoiceLocale);
       await p.remove(_kMapStyle);
     }
   }

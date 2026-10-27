@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter_tts/flutter_tts.dart';
 import '../models/poi_models.dart';
+import 'settings_service.dart';
 
 class CommuneService {
   // -------------------------------------------------------------------------
@@ -266,7 +267,7 @@ Future<void> verifierCommune({
 Future<void> _annoncerCommune(String commune, int? total, int? lus) async {
   if (!_ttsReady) return;
   // S'assurer que la langue est bien configurée
-  await _tts.setLanguage('fr-FR');
+  await SettingsService.instance.appliquerVoix(_tts);
   await _tts.setSpeechRate(0.5);
   // Petite pause pour s'assurer que le contexte est stable
   await Future.delayed(const Duration(milliseconds: 500));
