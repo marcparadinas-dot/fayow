@@ -48,13 +48,15 @@ if (mounted) {
     );
   }
 }
-    } on FirebaseAuthException catch (e) {
-      setState(() { _errorMessage = _traduireErreur(e.code); });
-    } catch (e) {
-      setState(() { _errorMessage = e.toString(); });
-    } finally {
-      setState(() { _isLoading = false; });
-    }
+        } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() { _errorMessage = _traduireErreur(e.code); });
+    } catch (e, st) {
+  debugPrint('ERREUR AUTH : $e');
+  for (final line in st.toString().split('\n').take(15)) {
+    debugPrint('  STACK> $line');
+  }
+  setState(() { _errorMessage = e.toString(); });
+}
   }
 
   // -------------------------------------------------------------------------

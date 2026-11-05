@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'parcourir_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -89,7 +90,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
 
-    // Foreground service — Android uniquement (no-op sur iOS via ForegroundServiceManager)
+    // Foreground service — Android uniquement (no-op sur iOS et web via ForegroundServiceManager)
     ForegroundServiceManager.initialiser();
     // Le service de premier plan n'est plus démarré ici : il l'est dans
     // _demarrerSuiviPosition(), une fois la permission de localisation
@@ -97,7 +98,8 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     // Callback foreground task — Android uniquement
-    if (Platform.isAndroid) {
+    // kIsWeb testé en premier : Platform n'est pas supporté sur le web
+    if (!kIsWeb && Platform.isAndroid) {
       FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
     }
 
@@ -121,7 +123,9 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
 
   /// Écoute la boussole (iOS et Android). Suspendue quand l'appli passe en
   /// arrière-plan ou en veille : le capteur est inutile écran éteint.
+  /// Désactivée sur le web : pas de capteur d'orientation fiable sur un navigateur.
   void _demarrerBoussole() {
+    if (kIsWeb) return;
     if (_compassSubscription != null) return;
     _compassSubscription = FlutterCompass.events?.listen((CompassEvent event) {
       final heading = event.heading;
@@ -166,7 +170,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     // Callback foreground task — Android uniquement
-    if (Platform.isAndroid) {
+    if (!kIsWeb && Platform.isAndroid) {
       FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
     }
 
@@ -177,7 +181,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _currentHeading.dispose();
     _ttsService.dispose();
 
-    // Arrêt du service — Android uniquement (no-op sur iOS)
+    // Arrêt du service — Android uniquement (no-op sur iOS et web)
     ForegroundServiceManager.arreter();
 
     _communeService.dispose();
@@ -277,6 +281,14 @@ Future<void> _initLocation() async {
 
   /// Réglages du flux GPS, adaptés à chaque plateforme.
   LocationSettings _reglagesGps() {
+    // kIsWeb testé en premier : Platform n'est pas supporté sur le web.
+    // Sur le web, seuls les réglages génériques sont pris en compte.
+    if (kIsWeb) {
+      return const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      );
+    }
     if (Platform.isIOS) {
       // Nécessite UIBackgroundModes > location dans Info.plist pour que le
       // suivi continue écran verrouillé.
@@ -833,114 +845,128 @@ void _afficherDialogEditionPoi(PointInteret poi) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
+      scrollable: true,
       title: const Text('Modifier votre brouillon'),
-      content: TextField(
-        controller: textController,
-        decoration: const InputDecoration(
-          hintText: 'Message de l\'anecdote',
-        ),
-        maxLines: 4,
-      ),
-      actions: [
-        // Supprimer
-        TextButton(
-          onPressed: () async {
-            final confirme = await confirmerSuppressionBrouillon(context);
-            if (!confirme || !context.mounted) return;
-            Navigator.pop(context);
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: textController,
+            decoration: const InputDecoration(
+              hintText: 'Message de l\'anecdote',
+            ),
+            minLines: 2,
+            maxLines: 4,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              // Supprimer
+              TextButton(
+                onPressed: () async {
+                  final confirme = await confirmerSuppressionBrouillon(context);
+                  if (!confirme || !context.mounted) return;
+                  Navigator.pop(context);
 
-            try {
-              await _poiRepository.supprimerPoi(poi.id);
-              await _chargerPois();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Brouillon supprimé')),
-                );
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur : $e')),
-                );
-              }
-            }
-          },
-          child: const Text('Supprimer',
-              style: TextStyle(color: Colors.red)),
-        ),
-        // Annuler
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        // Proposer à la modération
-        TextButton(
-          onPressed: () async {
-            final message = textController.text.trim();
-            if (message.isEmpty) return;
-
-            // Confirmation avant envoi (en cas de clic par inadvertance).
-            // Sur "Non", on reste dans l'édition, texte conservé.
-            final confirme =
-                await confirmerSoumissionModeration(context, message);
-            if (!confirme || !context.mounted) return;
-            Navigator.pop(context);
-
-            try {
-              await _poiRepository.mettreAJourPoi(
-                poi.id,
-                {
-                  'message': message,
-                  'status': 'proposed',
+                  try {
+                    await _poiRepository.supprimerPoi(poi.id);
+                    await _chargerPois();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Brouillon supprimé')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur : $e')),
+                      );
+                    }
+                  }
                 },
-              );
-              await _chargerPois();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('POI proposé à la modération !')),
-                );
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur : $e')),
-                );
-              }
-            }
-          },
-          child: const Text('Proposer à la modération',
-              style: TextStyle(color: Colors.orange)),
-        ),
-        // Enregistrer
-        ElevatedButton(
-          onPressed: () async {
-            final message = textController.text.trim();
-            if (message.isEmpty) return;
-            Navigator.pop(context);
+                child: const Text('Supprimer',
+                    style: TextStyle(color: Colors.red)),
+              ),
+              // Annuler
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              // Proposer à la modération
+              TextButton(
+                onPressed: () async {
+                  final message = textController.text.trim();
+                  if (message.isEmpty) return;
 
-            try {
-              await _poiRepository.mettreAJourPoi(
-                poi.id,
-                {'message': message},
-              );
-              await _chargerPois();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Brouillon mis à jour')),
-                );
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur : $e')),
-                );
-              }
-            }
-          },
-          child: const Text('Enregistrer'),
-        ),
-      ],
+                  // Confirmation avant envoi (en cas de clic par inadvertance).
+                  // Sur "Non", on reste dans l'édition, texte conservé.
+                  final confirme =
+                      await confirmerSoumissionModeration(context, message);
+                  if (!confirme || !context.mounted) return;
+                  Navigator.pop(context);
+
+                  try {
+                    await _poiRepository.mettreAJourPoi(
+                      poi.id,
+                      {
+                        'message': message,
+                        'status': 'proposed',
+                      },
+                    );
+                    await _chargerPois();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('POI proposé à la modération !')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur : $e')),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Proposer à la modération',
+                    style: TextStyle(color: Colors.orange)),
+              ),
+              // Enregistrer
+              ElevatedButton(
+                onPressed: () async {
+                  final message = textController.text.trim();
+                  if (message.isEmpty) return;
+                  Navigator.pop(context);
+
+                  try {
+                    await _poiRepository.mettreAJourPoi(
+                      poi.id,
+                      {'message': message},
+                    );
+                    await _chargerPois();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Brouillon mis à jour')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur : $e')),
+                      );
+                    }
+                  }
+                },
+                child: const Text('Enregistrer'),
+              ),
+            ],
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -1002,65 +1028,79 @@ void _afficherDialogModerationPoi(PointInteret poi) {
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
+      scrollable: true,
       title: const Text('Modérer une anecdote'),
-      content: TextField(
-        controller: textController,
-        decoration: const InputDecoration(
-          hintText: 'Message de l\'anecdote',
-        ),
-        maxLines: 4,
-      ),
-      actions: [
-        // Annuler
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Annuler'),
-        ),
-        // Rejeter → repasser en initiated
-        TextButton(
-          onPressed: () async {
-            Navigator.pop(context);
-            await _afficherDialogRejetAvecMotif(poi);
-          },
-          child: const Text('Rejeter', style: TextStyle(color: Colors.red)),
-        ),
-
-        // Valider
-        ElevatedButton(
-          onPressed: () async {
-            final message = textController.text.trim();
-            if (message.isEmpty) return;
-            Navigator.pop(context);
-            try {
-              await _poiRepository.mettreAJourPoi(
-                poi.id,
-                {
-                  'message': message,
-                  'status': 'validated',
-                  'approved': true,
-                },
-              );
-              await _chargerPois();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Anecdote validée !')),
-                );
-              }
-            } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Erreur : $e')),
-                );
-              }
-            }
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            foregroundColor: Colors.white,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: textController,
+            decoration: const InputDecoration(
+              hintText: 'Message de l\'anecdote',
+            ),
+            minLines: 2,
+            maxLines: 4,
           ),
-          child: const Text('Valider'),
-        ),
-      ],
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              // Annuler
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Annuler'),
+              ),
+              // Rejeter → repasser en initiated
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await _afficherDialogRejetAvecMotif(poi);
+                },
+                child: const Text('Rejeter',
+                    style: TextStyle(color: Colors.red)),
+              ),
+              // Valider
+              ElevatedButton(
+                onPressed: () async {
+                  final message = textController.text.trim();
+                  if (message.isEmpty) return;
+                  Navigator.pop(context);
+                  try {
+                    await _poiRepository.mettreAJourPoi(
+                      poi.id,
+                      {
+                        'message': message,
+                        'status': 'validated',
+                        'approved': true,
+                      },
+                    );
+                    await _chargerPois();
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Anecdote validée !')),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Erreur : $e')),
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Valider'),
+              ),
+            ],
+          ),
+        ],
+      ),
     ),
   );
 }

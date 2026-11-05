@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -23,7 +24,8 @@ void main() async {
   ]);
   // Foreground service — Android uniquement
   // Sur iOS, cette méthode est un no-op (voir foreground_service.dart)
-  if (Platform.isAndroid) {
+  // kIsWeb testé en premier : Platform n'est pas supporté sur le web
+  if (!kIsWeb && Platform.isAndroid) {
     await ForegroundServiceManager.initialiser();
   }
   runApp(const FayowApp());

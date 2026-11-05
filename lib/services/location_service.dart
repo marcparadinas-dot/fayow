@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:permission_handler/permission_handler.dart';
@@ -59,8 +60,8 @@ class LocationService {
       etat = await _demanderPremierPlan();
     }
 
-    // 3. Permission « toujours » (Android uniquement) — facultative
-    if (Platform.isAndroid && context.mounted) {
+    // 3. Permission « toujours » (Android uniquement, jamais sur le web) — facultative
+    if (!kIsWeb && Platform.isAndroid && context.mounted) {
       final arrierePlan = await Permission.locationAlways.status;
       if (!arrierePlan.isGranted && context.mounted) {
         final accepter = await showDialog<bool>(
@@ -105,23 +106,27 @@ class LocationService {
   // ---------------------------------------------------------------------------
   // Permission « pendant l'utilisation » — implémentation par plateforme
   //
-  // iOS : on passe par Geolocator. Le plugin permission_handler n'active pas
-  // la localisation sur iOS tant que la macro PERMISSION_LOCATION n'est pas
-  // définie dans le Podfile : ses fonctions de localisation ne font alors
-  // rien (pas de fenêtre de demande, état toujours « refusé »). Geolocator,
-  // lui, fonctionne, et c'est déjà lui que MapScreen utilise.
+  // Web et iOS : on passe par Geolocator. Sur iOS, le plugin permission_handler
+  // n'active pas la localisation tant que la macro PERMISSION_LOCATION n'est
+  // pas définie dans le Podfile : ses fonctions de localisation ne font alors
+  // rien (pas de fenêtre de demande, état toujours « refusé »). Sur le web,
+  // c'est le navigateur qui gère l'autorisation, via Geolocator.
   // Android : permission_handler, inchangé.
+  //
+  // kIsWeb est toujours testé EN PREMIER : Platform n'est pas supporté sur le web.
   // ---------------------------------------------------------------------------
 
+  static bool get _utiliseGeolocator => kIsWeb || Platform.isIOS;
+
   static Future<_EtatLocalisation> _lireEtat() async {
-    if (Platform.isIOS) {
+    if (_utiliseGeolocator) {
       final p = await geo.Geolocator.checkPermission();
       if (p == geo.LocationPermission.whileInUse ||
           p == geo.LocationPermission.always) {
         return _EtatLocalisation.accordee;
       }
-      // Sur iOS : « denied » = jamais demandée, « deniedForever » = refusée
-      // (ou restreinte) : le système ne redemandera plus.
+      // Sur iOS et le web : « denied » = jamais demandée, « deniedForever » =
+      // refusée (ou restreinte) : le système ne redemandera plus.
       if (p == geo.LocationPermission.deniedForever) {
         return _EtatLocalisation.definitive;
       }
@@ -135,7 +140,7 @@ class LocationService {
   }
 
   static Future<_EtatLocalisation> _demanderPremierPlan() async {
-    if (Platform.isIOS) {
+    if (_utiliseGeolocator) {
       await geo.Geolocator.requestPermission();
     } else {
       await Permission.location.request();
@@ -144,6 +149,11 @@ class LocationService {
   }
 
   static Future<void> _ouvrirReglages() async {
+    if (kIsWeb) {
+      // Pas de réglages d'appli sur le web : l'utilisateur doit modifier
+      // l'autorisation du site dans son navigateur (voir _cheminReglages).
+      return;
+    }
     if (Platform.isIOS) {
       await geo.Geolocator.openAppSettings();
     } else {
@@ -154,15 +164,23 @@ class LocationService {
   /// Chemin à suivre dans les réglages du téléphone. Écrit en toutes lettres
   /// car l'ouverture des réglages n'arrive pas toujours sur la page de l'appli
   /// (notamment sur iOS tant que l'appli n'y a pas d'entrée).
-  static String get _cheminReglages => Platform.isIOS
-      ? "Pour l'activer :\n"
-        "1. Ouvrez Réglages\n"
-        "2. Touchez FaYoW (en bas de la liste)\n"
-        "3. Touchez Position, puis « Lorsque l'app est active »\n\n"
-        "Si FaYoW n'apparaît pas, allez dans Réglages › Confidentialité et "
-        "sécurité › Services de localisation › FaYoW."
-      : "Pour l'activer : Paramètres › Applications › FaYoW › Autorisations › "
+  static String get _cheminReglages {
+    if (kIsWeb) {
+      return "Pour l'activer : cliquez sur l'icône à gauche de l'adresse du "
+          "site dans la barre du navigateur, autorisez la localisation, puis "
+          "rechargez la page.";
+    }
+    if (Platform.isIOS) {
+      return "Pour l'activer :\n"
+          "1. Ouvrez Réglages\n"
+          "2. Touchez FaYoW (en bas de la liste)\n"
+          "3. Touchez Position, puis « Lorsque l'app est active »\n\n"
+          "Si FaYoW n'apparaît pas, allez dans Réglages › Confidentialité et "
+          "sécurité › Services de localisation › FaYoW.";
+    }
+    return "Pour l'activer : Paramètres › Applications › FaYoW › Autorisations › "
         "Position, puis « Autoriser uniquement lorsque l'appli est utilisée ».";
+  }
 
   /// Explique à l'utilisateur que le refus empêche l'appli de fonctionner.
   /// Retourne true s'il veut réessayer / ouvrir les réglages, false s'il renonce.

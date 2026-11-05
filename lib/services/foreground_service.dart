@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Import conditionnel : flutter_foreground_task ne compile que si Platform.isAndroid
 // est vérifié au RUNTIME avant tout appel. L'import en lui-même est ok sur iOS
@@ -9,7 +10,8 @@ import 'package:permission_handler/permission_handler.dart';
 class ForegroundServiceManager {
 
   static Future<void> initialiser() async {
-    if (!Platform.isAndroid) return; // ← no-op iOS, rien d'autre n'est exécuté
+    // kIsWeb testé en premier : Platform n'est pas supporté sur le web
+    if (kIsWeb || !Platform.isAndroid) return; // ← no-op web et iOS, rien d'autre n'est exécuté
 
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -42,7 +44,7 @@ class ForegroundServiceManager {
   }
 
   static Future<void> demarrer() async {
-    if (!Platform.isAndroid) return; // ← no-op iOS
+    if (kIsWeb || !Platform.isAndroid) return; // ← no-op web et iOS
 
     // Garde-fou indispensable : un service de premier plan de type "location"
     // lève une SecurityException NATIVE (non rattrapable depuis Dart) s'il est
@@ -66,7 +68,7 @@ class ForegroundServiceManager {
   }
 
   static Future<void> arreter() async {
-    if (!Platform.isAndroid) return; // ← no-op iOS
+    if (kIsWeb || !Platform.isAndroid) return; // ← no-op web et iOS
 
     await FlutterForegroundTask.stopService();
   }
