@@ -16,6 +16,7 @@ import '../services/score_service.dart';
 import '../services/settings_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
+import '../utils/distance_format.dart';
 import '../widgets/map_compass_button.dart';
 import '../widgets/map_recenter_button.dart';
 import '../widgets/confirmation_soumission.dart';
@@ -23,6 +24,10 @@ import '../widgets/direction_marker.dart';
 
 /// Filtre d'affichage de l'onglet Liste
 enum _FiltreListe { tout, lus, proposes, inities }
+
+/// Couleur des anecdotes validées dont l'utilisateur est l'auteur
+/// (à garder identique à celle utilisée dans map_screen.dart).
+const Color _couleurMesValidees = Colors.purple;
 
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
@@ -150,6 +155,18 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   }
 
   // -------------------------------------------------------------------------
+  // Anecdotes validées dont l'utilisateur est l'auteur
+  // -------------------------------------------------------------------------
+
+  /// Vrai si le POI est validé et a été créé par l'utilisateur connecté.
+  bool _estMonPoiValide(PointInteret poi) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid != null &&
+        poi.status == PoiStatus.validated &&
+        poi.creatorUid == uid;
+  }
+
+  // -------------------------------------------------------------------------
   // POIs visibles (filtrés selon le profil)
   // -------------------------------------------------------------------------
 
@@ -163,10 +180,13 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   /// POIs affichés dans l'onglet Liste (avec aperçu du texte) : on masque
   /// les validés non lus aux non-modérateurs pour ne pas dévoiler le
   /// contenu d'une anecdote avant que l'utilisateur ne se rende sur place.
+  /// Exception : l'auteur d'une anecdote validée peut toujours la consulter.
   List<PointInteret> get _poisListe {
     return _pointsInteret.where((poi) {
       if (poi.status == PoiStatus.validated) {
-        return _poisLusIds.contains(poi.id) || _isModerator;
+        return _poisLusIds.contains(poi.id) ||
+            _isModerator ||
+            _estMonPoiValide(poi);
       }
       return true;
     }).toList();
@@ -180,18 +200,28 @@ class _ParcourirScreenState extends State<ParcourirScreen>
         return poi.status == PoiStatus.validated &&
             _poisLusIds.contains(poi.id);
       case _FiltreListe.proposes:
-        return poi.status == PoiStatus.proposed;
+        // Proposées, puis (en dessous) mes anecdotes validées
+        return poi.status == PoiStatus.proposed || _estMonPoiValide(poi);
       case _FiltreListe.inities:
         return poi.status == PoiStatus.initiated;
     }
   }
 
-  // POIs triés : validés lus (récent → ancien), puis proposés, puis initiés
+  // POIs triés : validés lus ou à moi (récent → ancien), puis proposés,
+  // puis initiés. Avec le filtre "Proposées" : proposés d'abord, puis mes
+  // anecdotes validées.
   List<PointInteret> get _poisTries {
     final liste = _poisListe.where(_correspondAuFiltre).toList();
+    final modeProposees = _filtreListe == _FiltreListe.proposes;
     liste.sort((a, b) {
       int ordreStatut(PointInteret p) {
-        if (p.status == PoiStatus.validated && _poisLusIds.contains(p.id)) return 0;
+        if (modeProposees) {
+          return p.status == PoiStatus.proposed ? 0 : 1;
+        }
+        if (p.status == PoiStatus.validated &&
+            (_poisLusIds.contains(p.id) || _estMonPoiValide(p))) {
+          return 0;
+        }
         if (p.status == PoiStatus.proposed) return 1;
         if (p.status == PoiStatus.initiated) return 2;
         if (p.status == PoiStatus.validated) return 3; // validés non lus (modérateur)
@@ -202,8 +232,9 @@ class _ParcourirScreenState extends State<ParcourirScreen>
       final ordreB = ordreStatut(b);
       if (ordreA != ordreB) return ordreA.compareTo(ordreB);
 
-      // Parmi les anecdotes lues : la plus récemment découverte en premier
-      if (ordreA == 0) {
+      // Parmi les anecdotes validées : la plus récemment découverte en premier
+      final groupeValidees = modeProposees ? ordreA == 1 : ordreA == 0;
+      if (groupeValidees) {
         final dateA = _datesLecture[a.id];
         final dateB = _datesLecture[b.id];
         if (dateA != null && dateB != null) return dateB.compareTo(dateA);
@@ -220,6 +251,9 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   // -------------------------------------------------------------------------
 
   Color _getCercleColor(PointInteret poi) {
+    if (_estMonPoiValide(poi)) {
+      return _couleurMesValidees.withOpacity(0.4);
+    }
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green.withOpacity(0.4);
     }
@@ -234,6 +268,9 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   }
 
   Color _getCercleBorderColor(PointInteret poi) {
+    if (_estMonPoiValide(poi)) {
+      return _couleurMesValidees;
+    }
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green;
     }
@@ -248,6 +285,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   }
 
   Color _getListeColor(PointInteret poi) {
+    if (_estMonPoiValide(poi)) return _couleurMesValidees;
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return Colors.green;
     }
@@ -257,6 +295,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   }
 
   String _getStatutLabel(PointInteret poi) {
+    if (_estMonPoiValide(poi)) return 'Validée';
     if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
       return 'Lue';
     }
@@ -456,10 +495,10 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     switch (poi.status) {
       case PoiStatus.validated:
         final estLu = _poisLusIds.contains(poi.id);
-        if (estLu || _isModerator) {
+        if (estLu || _isModerator || _estMonPoiValide(poi)) {
           _afficherDialogTexte(poi, avecLocaliser: depuisListe);
         } else {
-          _afficherDialogNonLu();
+          _afficherDialogNonLu(poi);
         }
       case PoiStatus.initiated:
         _afficherDialogEdition(poi, avecLocaliser: depuisListe);
@@ -521,14 +560,30 @@ void _localiserAnecdote(PointInteret poi) {
 }
 
 /// Affiche un message explicatif quand un utilisateur non-modérateur
-/// tape sur un POI validé (gris) qu'il n'a pas encore lu
-void _afficherDialogNonLu() {
+/// tape sur un POI validé (gris) qu'il n'a pas encore lu,
+/// avec la distance qui le sépare de l'anecdote.
+void _afficherDialogNonLu(PointInteret poi) {
+  final metres =
+      _distance.as(LengthUnit.Meter, _positionUtilisateur, poi.position);
+  final distanceTexte = formaterDistance(metres);
+
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Anecdote non lue'),
-      content: const Text(
-        "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
+          ),
+          const SizedBox(height: 12),
+          Text(
+            distanceTexte,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -930,6 +985,23 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
   // Vue Liste
   // -------------------------------------------------------------------------
 
+  /// En-tête de la seconde section du filtre "Proposées"
+  Widget _buildEnteteMesValidees() {
+    return Container(
+      width: double.infinity,
+      color: _couleurMesValidees.withOpacity(0.08),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Text(
+        'Mes anecdotes validées',
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: _couleurMesValidees,
+        ),
+      ),
+    );
+  }
+
   Widget _buildListe() {
     final pois = _poisTries;
 
@@ -941,6 +1013,14 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
         ),
       );
     }
+
+    // Avec le filtre "Proposées", on insère un en-tête avant la première de
+    // mes anecdotes validées (qui suivent les proposées dans le tri).
+    final indexSeparation = _filtreListe == _FiltreListe.proposes
+        ? pois.indexWhere(_estMonPoiValide)
+        : -1;
+    final avecEntete = indexSeparation != -1;
+    final nbElements = pois.length + (avecEntete ? 1 : 0);
 
     // Marge basse : la dernière anecdote ne doit pas passer sous la barre de
     // navigation Android (le corps de l'écran s'étend derrière elle). On
@@ -969,10 +1049,15 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
         child: ListView.separated(
       controller: _listeController,
       padding: EdgeInsets.only(top: 8, bottom: margeBasse),
-      itemCount: pois.length,
+      itemCount: nbElements,
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, index) {
-        final poi = pois[index];
+        if (avecEntete && index == indexSeparation) {
+          return _buildEnteteMesValidees();
+        }
+        final poi = pois[avecEntete && index > indexSeparation
+            ? index - 1
+            : index];
         final couleur = _getListeColor(poi);
         final statut = _getStatutLabel(poi);
         final apercu = poi.message.length > 80

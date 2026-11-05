@@ -22,6 +22,7 @@ import 'profil_screen.dart';
 import '../services/score_service.dart';
 import 'classement_screen.dart';
 import '../services/mail_service.dart';
+import '../utils/distance_format.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 // → flutter_foreground_task n'est plus importé directement ici.
 //   Tout passe par ForegroundServiceManager (foreground_service.dart)
@@ -674,14 +675,38 @@ void _fermerDialogPoi() {
 }
 
 /// Affiche un message explicatif quand un utilisateur non-modérateur
-/// tape sur un POI validé (violet) qu'il n'a pas encore lu
-void _afficherDialogNonLu() {
+/// tape sur un POI validé (violet) qu'il n'a pas encore lu,
+/// avec la distance qui le sépare de l'anecdote.
+void _afficherDialogNonLu(PointInteret poi) {
+  final position = _currentPosition;
+
+  // Pas de distance en veille : la position n'est plus actualisée,
+  // l'afficher serait trompeur.
+  String? distanceTexte;
+  if (position != null && !_enVeille) {
+    final metres = _distance.as(LengthUnit.Meter, position, poi.position);
+    distanceTexte = formaterDistance(metres);
+  }
+
   showDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('Anecdote non lue'),
-      content: const Text(
-        "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Vous n'avez pas encore lu cette anecdote. Pour le faire, rendez-vous à cet endroit.",
+          ),
+          if (distanceTexte != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              distanceTexte,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ],
       ),
       actions: [
         TextButton(
@@ -830,7 +855,7 @@ void _onCarteTappee(LatLng tapLatLng) {
 
   if (poiTouche != null) {
     if (poiTouche.status == PoiStatus.validated) {
-      _afficherDialogNonLu();
+      _afficherDialogNonLu(poiTouche);
     } else if (poiTouche.status == PoiStatus.proposed && _isModerator) {
       _afficherDialogModerationPoi(poiTouche);
     } else {
