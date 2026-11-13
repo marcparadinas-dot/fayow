@@ -16,9 +16,10 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _pseudoController   = TextEditingController();
 
-  bool _isInscription = false; // false = Connexion, true = Inscription
-  bool _isLoading     = false;
-  String _errorMessage = '';
+  bool _isInscription    = false; // false = Connexion, true = Inscription
+  bool _isLoading        = false;
+  bool _obscurePassword  = true;  // true = mot de passe masqué
+  String _errorMessage   = '';
 
   @override
   void dispose() {
@@ -39,101 +40,103 @@ class _AuthScreenState extends State<AuthScreen> {
         email:    _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-if (mounted) {
-  await LocationService.demanderPermissions(context); // ← ajout
-  if (mounted) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const MapScreen()),
-    );
-  }
-}
-        } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        await LocationService.demanderPermissions(context);
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const MapScreen()),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
       if (mounted) setState(() { _errorMessage = _traduireErreur(e.code); });
     } catch (e, st) {
-  debugPrint('ERREUR AUTH : $e');
-  for (final line in st.toString().split('\n').take(15)) {
-    debugPrint('  STACK> $line');
-  }
-  setState(() { _errorMessage = e.toString(); });
-}
+      debugPrint('ERREUR AUTH : $e');
+      for (final line in st.toString().split('\n').take(15)) {
+        debugPrint('  STACK> $line');
+      }
+      if (mounted) setState(() { _errorMessage = e.toString(); });
+    } finally {
+      if (mounted) setState(() { _isLoading = false; });
+    }
   }
 
   // -------------------------------------------------------------------------
   // Inscription
   // -------------------------------------------------------------------------
 
-Future<void> _signUp() async {
-  final pseudo = _pseudoController.text.trim();
-  if (pseudo.isEmpty) {
-    setState(() { _errorMessage = 'Veuillez choisir un pseudo.'; });
-    return;
-  }
-  if (pseudo.length < 2) {
-    setState(() { _errorMessage = 'Le pseudo doit contenir au moins 2 caractères.'; });
-    return;
-  }
-
-  setState(() { _isLoading = true; _errorMessage = ''; });
-
-  try {
-    // Vérifier si le pseudo est déjà pris (insensible à la casse)
-    final pseudoKey = pseudo.toLowerCase();
-    final pseudoDoc = await FirebaseFirestore.instance
-        .collection('pseudos')
-        .doc(pseudoKey)
-        .get();
-
-    if (pseudoDoc.exists) {
-      setState(() {
-        _errorMessage = 'Ce pseudo est déjà utilisé. Choisissez-en un autre.';
-        _isLoading = false;
-      });
+  Future<void> _signUp() async {
+    final pseudo = _pseudoController.text.trim();
+    if (pseudo.isEmpty) {
+      setState(() { _errorMessage = 'Veuillez choisir un pseudo.'; });
+      return;
+    }
+    if (pseudo.length < 2) {
+      setState(() { _errorMessage = 'Le pseudo doit contenir au moins 2 caractères.'; });
       return;
     }
 
-    // Créer le compte Firebase Auth
-    final credential = await FirebaseAuth.instance
-        .createUserWithEmailAndPassword(
-      email:    _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
+    setState(() { _isLoading = true; _errorMessage = ''; });
 
-    final uid = credential.user?.uid;
-    if (uid != null) {
-      // Enregistrer le pseudo dans users/{uid}
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .set({
-            'pseudo': pseudo,
-            'email': _emailController.text.trim(),
-          }, SetOptions(merge: true));
-
-      // Réserver le pseudo dans la collection pseudos
-      await FirebaseFirestore.instance
+    try {
+      // Vérifier si le pseudo est déjà pris (insensible à la casse)
+      final pseudoKey = pseudo.toLowerCase();
+      final pseudoDoc = await FirebaseFirestore.instance
           .collection('pseudos')
           .doc(pseudoKey)
-          .set({'uid': uid, 'pseudo': pseudo});
-    }
+          .get();
 
-if (mounted) {
-  await LocationService.demanderPermissions(context); // ← ajout
-  if (mounted) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const MapScreen()),
-    );
+      if (pseudoDoc.exists) {
+        setState(() {
+          _errorMessage = 'Ce pseudo est déjà utilisé. Choisissez-en un autre.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Créer le compte Firebase Auth
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email:    _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      final uid = credential.user?.uid;
+      if (uid != null) {
+        // Enregistrer le pseudo dans users/{uid}
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(uid)
+            .set({
+              'pseudo': pseudo,
+              'email': _emailController.text.trim(),
+            }, SetOptions(merge: true));
+
+        // Réserver le pseudo dans la collection pseudos
+        await FirebaseFirestore.instance
+            .collection('pseudos')
+            .doc(pseudoKey)
+            .set({'uid': uid, 'pseudo': pseudo});
+      }
+
+      if (mounted) {
+        await LocationService.demanderPermissions(context);
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const MapScreen()),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) setState(() { _errorMessage = _traduireErreur(e.code); });
+    } catch (e) {
+      if (mounted) setState(() { _errorMessage = e.toString(); });
+    } finally {
+      if (mounted) setState(() { _isLoading = false; });
+    }
   }
-}
-  } on FirebaseAuthException catch (e) {
-    setState(() { _errorMessage = _traduireErreur(e.code); });
-  } catch (e) {
-    setState(() { _errorMessage = e.toString(); });
-  } finally {
-    setState(() { _isLoading = false; });
-  }
-}
 
   // -------------------------------------------------------------------------
   // Mot de passe oublié
@@ -341,17 +344,30 @@ if (mounted) {
                         ),
                         const SizedBox(height: 16),
 
-                        // Champ mot de passe
+                        // Champ mot de passe (avec bouton afficher / masquer)
                         TextField(
                           controller: _passwordController,
                           decoration: InputDecoration(
                             labelText: 'Mot de passe',
                             prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Afficher le mot de passe'
+                                  : 'Masquer le mot de passe',
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                              ),
+                              onPressed: () => setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              }),
+                            ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          obscureText: true,
+                          obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) =>
                               _isInscription ? _signUp() : _signIn(),
