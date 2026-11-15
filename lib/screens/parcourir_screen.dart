@@ -15,6 +15,7 @@ import '../services/auth_service.dart';
 import '../services/score_service.dart';
 import '../services/settings_service.dart';
 import 'classement_screen.dart';
+import 'communes_screen.dart';
 import '../services/mail_service.dart';
 import '../utils/distance_format.dart';
 import '../widgets/map_compass_button.dart';
@@ -25,9 +26,15 @@ import '../widgets/direction_marker.dart';
 /// Filtre d'affichage de l'onglet Liste
 enum _FiltreListe { tout, lus, proposes, inities }
 
-/// Couleur des anecdotes validées dont l'utilisateur est l'auteur
-/// (à garder identique à celle utilisée dans map_screen.dart).
-const Color _couleurMesValidees = Colors.purple;
+/// Anecdotes validées DONT JE SUIS L'AUTEUR et que j'ai lues : vert foncé.
+const Color _couleurMienneLue = Color(0xFF1B5E20);
+
+/// Anecdotes validées DONT JE SUIS L'AUTEUR et que je n'ai pas lues : parme.
+/// [_couleurMienneNonLueFonce] est une variante plus soutenue, utilisée pour
+/// les bordures et les textes, où le parme seul manquerait de contraste.
+/// (Le violet est réservé à l'écran principal, map_screen.dart.)
+const Color _couleurMienneNonLue = Color(0xFFC9A0DC);
+const Color _couleurMienneNonLueFonce = Color(0xFF9B6FB5);
 
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
@@ -155,15 +162,21 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   }
 
   // -------------------------------------------------------------------------
-  // Anecdotes validées dont l'utilisateur est l'auteur
+  // Anecdotes validées : auteur et statut de lecture
   // -------------------------------------------------------------------------
 
-  /// Vrai si le POI est validé et a été créé par l'utilisateur connecté.
+  /// Vrai si le POI est validé et a été créé par l'utilisateur connecté
+  /// (qu'il l'ait lu ou non).
   bool _estMonPoiValide(PointInteret poi) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     return uid != null &&
         poi.status == PoiStatus.validated &&
         poi.creatorUid == uid;
+  }
+
+  /// Vrai si le POI est validé et marqué comme lu par l'utilisateur.
+  bool _estLu(PointInteret poi) {
+    return poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id);
   }
 
   // -------------------------------------------------------------------------
@@ -172,7 +185,8 @@ class _ParcourirScreenState extends State<ParcourirScreen>
 
   /// POIs affichés comme cercles sur la carte : tous les statuts, pour
   /// tout le monde. Un utilisateur lambda voit un cercle gris sur un
-  /// validé non lu, mais sans accès à son texte (cf. _ouvrirDialogPoi).
+  /// validé non lu créé par un tiers, mais sans accès à son texte
+  /// (cf. _ouvrirDialogPoi).
   List<PointInteret> get _poisVisibles {
     return List<PointInteret>.from(_pointsInteret);
   }
@@ -197,10 +211,11 @@ class _ParcourirScreenState extends State<ParcourirScreen>
       case _FiltreListe.tout:
         return true;
       case _FiltreListe.lus:
-        return poi.status == PoiStatus.validated &&
-            _poisLusIds.contains(poi.id);
+        // Vert normal (tiers lus) et vert foncé (mes anecdotes lues)
+        return _estLu(poi);
       case _FiltreListe.proposes:
         // Proposées, puis (en dessous) mes anecdotes validées
+        // (parme si non lues, vert foncé si lues)
         return poi.status == PoiStatus.proposed || _estMonPoiValide(poi);
       case _FiltreListe.inities:
         return poi.status == PoiStatus.initiated;
@@ -248,57 +263,55 @@ class _ParcourirScreenState extends State<ParcourirScreen>
 
   // -------------------------------------------------------------------------
   // Couleurs
+  //
+  // Anecdotes validées :
+  //   - créée par un tiers, non lue : gris (texte inaccessible)
+  //   - créée par un tiers, lue     : vert normal
+  //   - créée par moi, non lue      : parme
+  //   - créée par moi, lue          : vert foncé
   // -------------------------------------------------------------------------
 
   Color _getCercleColor(PointInteret poi) {
-    if (_estMonPoiValide(poi)) {
-      return _couleurMesValidees.withOpacity(0.4);
+    if (poi.status == PoiStatus.validated) {
+      if (_estMonPoiValide(poi)) {
+        return (_estLu(poi) ? _couleurMienneLue : _couleurMienneNonLue)
+            .withOpacity(0.55);
+      }
+      if (_estLu(poi)) return Colors.green.withOpacity(0.4);
+      return Colors.grey.withOpacity(0.5);
     }
-    if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
-      return Colors.green.withOpacity(0.4);
+    if (poi.status == PoiStatus.initiated) {
+      return Colors.orange.withOpacity(0.5);
     }
-    switch (poi.status) {
-      case PoiStatus.initiated:
-        return Colors.orange.withOpacity(0.5);
-      case PoiStatus.proposed:
-        return Colors.blue[900]!.withOpacity(0.5);
-      case PoiStatus.validated:
-        return Colors.grey.withOpacity(0.5);
-    }
+    return Colors.blue[900]!.withOpacity(0.5); // proposed
   }
 
   Color _getCercleBorderColor(PointInteret poi) {
-    if (_estMonPoiValide(poi)) {
-      return _couleurMesValidees;
+    if (poi.status == PoiStatus.validated) {
+      if (_estMonPoiValide(poi)) {
+        return _estLu(poi) ? _couleurMienneLue : _couleurMienneNonLueFonce;
+      }
+      if (_estLu(poi)) return Colors.green;
+      return Colors.grey;
     }
-    if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
-      return Colors.green;
-    }
-    switch (poi.status) {
-      case PoiStatus.initiated:
-        return Colors.orange;
-      case PoiStatus.proposed:
-        return Colors.blue[900]!;
-      case PoiStatus.validated:
-        return Colors.grey;
-    }
+    if (poi.status == PoiStatus.initiated) return Colors.orange;
+    return Colors.blue[900]!; // proposed
   }
 
   Color _getListeColor(PointInteret poi) {
-    if (_estMonPoiValide(poi)) return _couleurMesValidees;
-    if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
-      return Colors.green;
+    if (poi.status == PoiStatus.validated) {
+      if (_estMonPoiValide(poi)) {
+        return _estLu(poi) ? _couleurMienneLue : _couleurMienneNonLueFonce;
+      }
+      if (_estLu(poi)) return Colors.green;
+      return Colors.grey;
     }
-    if (poi.status == PoiStatus.validated) return Colors.grey;
     if (poi.status == PoiStatus.proposed) return Colors.blue[900]!;
     return Colors.orange;
   }
 
   String _getStatutLabel(PointInteret poi) {
-    if (_estMonPoiValide(poi)) return 'Validée';
-    if (poi.status == PoiStatus.validated && _poisLusIds.contains(poi.id)) {
-      return 'Lue';
-    }
+    if (_estLu(poi)) return 'Lue';
     if (poi.status == PoiStatus.validated) return 'Validée';
     if (poi.status == PoiStatus.proposed) return 'Proposée';
     return 'Brouillon';
@@ -555,6 +568,52 @@ void _localiserAnecdote(PointInteret poi) {
       _mapController.move(poi.position, _zoomLocalisation);
     } catch (_) {
       // Carte pas encore prête : onMapReady prendra le relais.
+    }
+  });
+}
+
+/// Ouvre l'écran "Communes FaYoW". Si l'utilisateur touche une commune,
+/// l'écran se ferme en la renvoyant et la carte est cadrée dessus.
+Future<void> _ouvrirCommunes() async {
+  final commune = await Navigator.push<CommuneFayow>(
+    context,
+    MaterialPageRoute(
+      builder: (_) => CommunesScreen(
+        pointsInteret: _pointsInteret,
+        poisLusIds: _poisLusIds,
+      ),
+    ),
+  );
+  if (commune == null || !mounted) return;
+  _centrerSurCommune(commune);
+}
+
+/// Cadre la carte sur l'ensemble des anecdotes validées de la commune.
+/// (Le bouton n'est cliquable que sur l'onglet Carte, dont la FlutterMap est
+/// maintenue en vie par _KeepAliveWrapper : on peut donc la piloter
+/// directement, sans passer par _cibleLocalisation.)
+void _centrerSurCommune(CommuneFayow commune) {
+  if (commune.points.isEmpty) return;
+
+  setState(() => _cibleLocalisation = null);
+  _tabController.index = 0;
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    try {
+      if (commune.points.length == 1) {
+        _mapController.move(commune.points.first, 15.0);
+      } else {
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: LatLngBounds.fromPoints(commune.points),
+            padding: const EdgeInsets.all(48),
+            maxZoom: 17,
+          ),
+        );
+      }
+    } catch (_) {
+      // Carte pas encore prête : on ne fait rien.
     }
   });
 }
@@ -986,17 +1045,18 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
   // -------------------------------------------------------------------------
 
   /// En-tête de la seconde section du filtre "Proposées"
+  /// (couleur neutre : la section mêle parme et vert foncé).
   Widget _buildEnteteMesValidees() {
     return Container(
       width: double.infinity,
-      color: _couleurMesValidees.withOpacity(0.08),
+      color: Colors.blueGrey.withOpacity(0.08),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Text(
+      child: const Text(
         'Mes anecdotes validées',
         style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w700,
-          color: _couleurMesValidees,
+          color: Colors.blueGrey,
         ),
       ),
     );
@@ -1114,11 +1174,10 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
     );
   }
 
-  /// Petits boutons de filtre affichés à droite des onglets (dans l'AppBar).
-  /// Visibles uniquement sur l'onglet Liste, avec un fondu pendant le glissement.
+  /// Petits boutons de filtre de l'onglet Liste (affichés à droite des
+  /// onglets, dans l'AppBar). Le fondu et la désactivation des taps selon
+  /// l'onglet sont gérés par [_buildZoneDroite].
   Widget _buildFiltresListe() {
-    final animation = _tabController.animation!;
-
     Widget chip(String label, _FiltreListe filtre, [Color? couleur]) =>
         Expanded(
           child: _FiltreChip(
@@ -1129,34 +1188,83 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
           ),
         );
 
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final visibilite = animation.value.clamp(0.0, 1.0);
-        return Opacity(
-          opacity: visibilite,
-          child: IgnorePointer(ignoring: visibilite < 0.5, child: child),
-        );
-      },
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(children: [
+            chip('Toutes', _FiltreListe.tout),
+            const SizedBox(width: 4),
+            chip('Lues', _FiltreListe.lus, Colors.green),
+          ]),
+          const SizedBox(height: 4),
+          Row(children: [
+            chip('Proposées', _FiltreListe.proposes, Colors.blue[900]),
+            const SizedBox(width: 4),
+            chip('Brouillon', _FiltreListe.inities, Colors.orange),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  /// Bouton d'accès à l'écran "Communes FaYoW" (visible sur l'onglet Carte).
+  Widget _buildBoutonCommunes() {
+    final couleur = Theme.of(context).colorScheme.primary;
+    return Center(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(children: [
-              chip('Toutes', _FiltreListe.tout),
-              const SizedBox(width: 4),
-              chip('Lues', _FiltreListe.lus, Colors.green),
-            ]),
-            const SizedBox(height: 4),
-            Row(children: [
-              chip('Proposées', _FiltreListe.proposes, Colors.blue[900]),
-              const SizedBox(width: 4),
-              chip('Brouillon', _FiltreListe.inities, Colors.orange),
-            ]),
-          ],
+        child: SizedBox(
+          height: 36,
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _ouvrirCommunes,
+            icon: const Icon(Icons.location_city, size: 18),
+            label: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('Communes FaYoW'),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: couleur,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+            ),
+          ),
         ),
       ),
+    );
+  }
+
+  /// Zone à droite des onglets : bouton "Communes FaYoW" sur l'onglet Carte,
+  /// filtres de la liste sur l'onglet Liste, avec un fondu enchaîné qui suit
+  /// le glissement entre les deux onglets.
+  Widget _buildZoneDroite() {
+    final animation = _tabController.animation!;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final v = animation.value.clamp(0.0, 1.0); // 0 = Carte, 1 = Liste
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Opacity(
+              opacity: 1 - v,
+              child: IgnorePointer(
+                ignoring: v > 0.5,
+                child: _buildBoutonCommunes(),
+              ),
+            ),
+            Opacity(
+              opacity: v,
+              child: IgnorePointer(
+                ignoring: v < 0.5,
+                child: _buildFiltresListe(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1353,8 +1461,13 @@ appBar: AppBar(
                   ],
                 ),
               ),
-              // Filtres de l'onglet Liste, dans la place restante à droite
-              Expanded(child: _buildFiltresListe()),
+              // Zone à droite des onglets : bouton "Communes FaYoW" (Carte)
+              // ou filtres de la liste (Liste), en fondu enchaîné
+              // Hauteur fixée : le bas de l'AppBar donne une hauteur non bornée,
+              // or le Stack (StackFit.expand) a besoin d'une hauteur finie.
+              Expanded(
+                child: SizedBox(height: 72, child: _buildZoneDroite()),
+              ),
             ],
           ),
         ),

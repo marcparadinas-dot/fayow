@@ -389,3 +389,4 @@ Et merci infiniment de contribuer à enchanter le monde.</p>
     }
   }
 );
+Object.assign(exports, require("./communes"));
