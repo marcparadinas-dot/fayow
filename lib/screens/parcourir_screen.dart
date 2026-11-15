@@ -20,6 +20,7 @@ import '../services/mail_service.dart';
 import '../utils/distance_format.dart';
 import '../widgets/map_compass_button.dart';
 import '../widgets/map_recenter_button.dart';
+import '../widgets/map_legende_button.dart'; // LÉGENDE
 import '../widgets/confirmation_soumission.dart';
 import '../widgets/direction_marker.dart';
 
@@ -316,6 +317,50 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     if (poi.status == PoiStatus.proposed) return 'Proposée';
     return 'Brouillon';
   }
+
+  // LÉGENDE -----------------------------------------------------------------
+  /// Légende affichée par le bouton « i » de la carte. Les couleurs reprennent
+  /// celles de _getCercleColor / _getCercleBorderColor : à modifier ensemble.
+  List<LegendeEntree> get _entreesLegende => [
+        LegendeEntree(
+          couleurFond: Colors.grey.withOpacity(0.5),
+          couleurBordure: Colors.grey,
+          titre: 'Anecdote à découvrir',
+          description:
+              "Écrite par un autre utilisateur. Rendez-vous sur place pour la lire.",
+        ),
+        LegendeEntree(
+          couleurFond: _couleurMienneNonLue.withOpacity(0.55),
+          couleurBordure: _couleurMienneNonLueFonce,
+          titre: 'Mon anecdote validée, non lue',
+          description: "Vous pouvez la consulter, mais elle ne compte pas "
+              "dans votre score : rendez-vous sur place.",
+        ),
+        LegendeEntree(
+          couleurFond: Colors.green.withOpacity(0.4),
+          couleurBordure: Colors.green,
+          titre: 'Anecdote découverte',
+          description: "Écrite par un autre utilisateur, déjà lue.",
+        ),
+        LegendeEntree(
+          couleurFond: _couleurMienneLue.withOpacity(0.55),
+          couleurBordure: _couleurMienneLue,
+          titre: 'Mon anecdote validée, lue',
+          description: "Votre anecdote, déjà lue sur place.",
+        ),
+        LegendeEntree(
+          couleurFond: Colors.blue[900]!.withOpacity(0.5),
+          couleurBordure: Colors.blue[900]!,
+          titre: 'Anecdote proposée',
+          description: "En cours de modération. Visible par vous et les modérateurs.",
+        ),
+        LegendeEntree(
+          couleurFond: Colors.orange.withOpacity(0.5),
+          couleurBordure: Colors.orange,
+          titre: 'Brouillon',
+          description: "Visible uniquement par vous, pas encore proposée.",
+        ),
+      ];
 
   // -------------------------------------------------------------------------
   // Construction des cercles (carte)
@@ -1333,6 +1378,9 @@ ListenableBuilder(
           // Remonté pour rester au-dessus de la barre de navigation Android
           margin: const EdgeInsets.only(bottom: 80, right: 12),
         ),
+
+        // LÉGENDE : bouton « i » (en bas à gauche, au-dessus de la barre Android)
+        MapLegendeButton(entrees: _entreesLegende),
 
         // Bannière orange en mode sélection de position
         if (_modeSelectionPosition)
