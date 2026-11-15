@@ -84,6 +84,12 @@ class _CommunesScreenState extends State<CommunesScreen> {
   String? _paysFiltre;
   final Set<String> _regionsFiltre = {};
 
+  // État de dépliage : les pays sont dépliés par défaut (on ne mémorise que
+  // ceux que l'utilisateur a repliés), les régions sont repliées par défaut
+  // (on ne mémorise que celles qu'il a dépliées).
+  final Set<String> _paysReplies = {};
+  final Set<String> _regionsDepliees = {};
+
   @override
   void initState() {
     super.initState();
@@ -148,6 +154,20 @@ class _CommunesScreenState extends State<CommunesScreen> {
       _sansAccents(a).compareTo(_sansAccents(b));
 
   // -------------------------------------------------------------------------
+  // Utilitaires d'affichage
+  // -------------------------------------------------------------------------
+
+  static String _pluriel(int n, String mot) => '$n $mot${n > 1 ? 's' : ''}';
+
+  static int _sommeAnecdotes(List<CommuneFayow> l) =>
+      l.fold<int>(0, (s, c) => s + c.nbAnecdotes);
+
+  static int _sommeLues(List<CommuneFayow> l) =>
+      l.fold<int>(0, (s, c) => s + c.nbLues);
+
+  static String _cleRegion(String pays, String region) => '$pays|$region';
+
+  // -------------------------------------------------------------------------
   // Filtres
   // -------------------------------------------------------------------------
 
@@ -177,6 +197,16 @@ class _CommunesScreenState extends State<CommunesScreen> {
         .toList();
     regions.sort(_comparer);
     return regions;
+  }
+
+  /// Déplie la région choisie dans le filtre : si on filtre sur une région,
+  /// c'est pour voir ses communes.
+  void _deplierRegion(String region) {
+    for (final c in _communes) {
+      if (c.region == region && (_paysFiltre == null || c.pays == _paysFiltre)) {
+        _regionsDepliees.add(_cleRegion(c.pays, region));
+      }
+    }
   }
 
   void _ouvrirFiltres() {
@@ -248,6 +278,7 @@ class _CommunesScreenState extends State<CommunesScreen> {
                           onSelected: (selection) => modifier(() {
                             if (selection) {
                               _regionsFiltre.add(r);
+                              _deplierRegion(r);
                             } else {
                               _regionsFiltre.remove(r);
                             }
@@ -271,7 +302,7 @@ class _CommunesScreenState extends State<CommunesScreen> {
                       FilledButton(
                         onPressed: () => Navigator.pop(sheetContext),
                         child: Text(
-                            'Voir ${_communesFiltrees.length} commune${_communesFiltrees.length > 1 ? 's' : ''}'),
+                            'Voir ${_pluriel(_communesFiltrees.length, 'commune')}'),
                       ),
                     ],
                   ),
@@ -288,66 +319,6 @@ class _CommunesScreenState extends State<CommunesScreen> {
   // Éléments du tableau
   // -------------------------------------------------------------------------
 
-  String _resume(List<CommuneFayow> communes) {
-    final nbCommunes = communes.length;
-    final anecdotes = communes.fold<int>(0, (s, c) => s + c.nbAnecdotes);
-    final lues = communes.fold<int>(0, (s, c) => s + c.nbLues);
-    return '$nbCommunes commune${nbCommunes > 1 ? 's' : ''} · '
-        '$anecdotes anecdote${anecdotes > 1 ? 's' : ''} · $lues lue${lues > 1 ? 's' : ''}';
-  }
-
-  Widget _entetePays(String pays, List<CommuneFayow> communes) {
-    final couleur = Theme.of(context).colorScheme.primary;
-    return Container(
-      width: double.infinity,
-      color: couleur.withOpacity(0.16),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            pays,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: couleur,
-            ),
-          ),
-          Text(
-            _resume(communes),
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _enteteRegion(String region, List<CommuneFayow> communes) {
-    return Container(
-      width: double.infinity,
-      color: Colors.blueGrey.withOpacity(0.08),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              region,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: Colors.blueGrey,
-              ),
-            ),
-          ),
-          Text(
-            '${communes.length} commune${communes.length > 1 ? 's' : ''}',
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _enteteColonnes() {
     const style = TextStyle(fontSize: 12, fontWeight: FontWeight.bold);
     return Container(
@@ -355,7 +326,7 @@ class _CommunesScreenState extends State<CommunesScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: const Row(
         children: [
-          Expanded(child: Text('Commune', style: style)),
+          Expanded(child: Text('Pays, région, commune', style: style)),
           SizedBox(
             width: _largeurAnecdotes,
             child: Text('Anecdotes', style: style, textAlign: TextAlign.right),
@@ -369,12 +340,138 @@ class _CommunesScreenState extends State<CommunesScreen> {
     );
   }
 
+  /// Ligne de pays ou de région : nom, détail, flèche de dépliage, et les
+  /// sommes d'anecdotes et de lues dans les mêmes colonnes que les communes.
+  Widget _ligneAgregat({
+    required String titre,
+    required String detail,
+    required int anecdotes,
+    required int lues,
+    required bool deplie,
+    required VoidCallback onTap,
+    required Color fond,
+    required Color couleur,
+    required double tailleTitre,
+    required double margeGauche,
+  }) {
+    final toutLu = anecdotes > 0 && lues == anecdotes;
+    return Material(
+      color: fond,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(margeGauche, 10, 16, 10),
+          child: Row(
+            children: [
+              Icon(
+                deplie ? Icons.expand_more : Icons.chevron_right,
+                size: 20,
+                color: couleur,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      titre,
+                      style: TextStyle(
+                        fontSize: tailleTitre,
+                        fontWeight: FontWeight.bold,
+                        color: couleur,
+                      ),
+                    ),
+                    Text(
+                      detail,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: _largeurAnecdotes,
+                child: Text(
+                  '$anecdotes',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: couleur,
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: _largeurLues,
+                child: Text(
+                  '$lues',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: toutLu ? Colors.green : couleur,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _lignePays({
+    required String pays,
+    required int nbRegions,
+    required List<CommuneFayow> communes,
+    required bool deplie,
+  }) {
+    final couleur = Theme.of(context).colorScheme.primary;
+    return _ligneAgregat(
+      titre: pays,
+      detail: '${_pluriel(nbRegions, 'région')} · '
+          '${_pluriel(communes.length, 'commune')}',
+      anecdotes: _sommeAnecdotes(communes),
+      lues: _sommeLues(communes),
+      deplie: deplie,
+      onTap: () => setState(() {
+        if (!_paysReplies.remove(pays)) _paysReplies.add(pays);
+      }),
+      fond: couleur.withOpacity(0.16),
+      couleur: couleur,
+      tailleTitre: 16,
+      margeGauche: 12,
+    );
+  }
+
+  Widget _ligneRegion({
+    required String pays,
+    required String region,
+    required List<CommuneFayow> communes,
+    required bool deplie,
+  }) {
+    final cle = _cleRegion(pays, region);
+    return _ligneAgregat(
+      titre: region,
+      detail: _pluriel(communes.length, 'commune'),
+      anecdotes: _sommeAnecdotes(communes),
+      lues: _sommeLues(communes),
+      deplie: deplie,
+      onTap: () => setState(() {
+        if (!_regionsDepliees.remove(cle)) _regionsDepliees.add(cle);
+      }),
+      fond: Colors.blueGrey.withOpacity(0.08),
+      couleur: Colors.blueGrey.shade700,
+      tailleTitre: 14,
+      margeGauche: 24,
+    );
+  }
+
   Widget _ligneCommune(CommuneFayow c) {
     final toutLu = c.nbAnecdotes > 0 && c.nbLues == c.nbAnecdotes;
     return InkWell(
       onTap: () => Navigator.pop(context, c),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.fromLTRB(56, 10, 16, 10),
         child: Row(
           children: [
             Expanded(
@@ -451,15 +548,31 @@ class _CommunesScreenState extends State<CommunesScreen> {
     final paysTries = parPays.keys.toList()..sort(_comparer);
     for (final pays in paysTries) {
       final regions = parPays[pays]!;
-      lignes.add(_entetePays(pays, regions.values.expand((l) => l).toList()));
+      final paysDeplie = !_paysReplies.contains(pays);
+      lignes.add(_lignePays(
+        pays: pays,
+        nbRegions: regions.length,
+        communes: regions.values.expand((l) => l).toList(),
+        deplie: paysDeplie,
+      ));
+      if (!paysDeplie) continue;
 
       final regionsTriees = regions.keys.toList()..sort(_comparer);
       for (final region in regionsTriees) {
         final liste = regions[region]!
           ..sort((a, b) => _comparer(a.nom, b.nom));
-        lignes.add(_enteteRegion(region, liste));
+        final regionDeplie =
+            _regionsDepliees.contains(_cleRegion(pays, region));
+        lignes.add(_ligneRegion(
+          pays: pays,
+          region: region,
+          communes: liste,
+          deplie: regionDeplie,
+        ));
+        if (!regionDeplie) continue;
+
         for (var i = 0; i < liste.length; i++) {
-          if (i > 0) lignes.add(const Divider(height: 1, indent: 16));
+          if (i > 0) lignes.add(const Divider(height: 1, indent: 56));
           lignes.add(_ligneCommune(liste[i]));
         }
       }

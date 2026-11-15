@@ -108,7 +108,20 @@ exports.backfillCommunesPois = onDocumentWritten(
     const afterSnap = event.data.after;
     if (!afterSnap || !afterSnap.exists) return;
 
+    const debut = Date.now();
     const limite = Math.min(Number(afterSnap.data().limite) || 300, 400);
+
+    // Visible tout de suite dans la console : prouve que le lot a démarré.
+    // Si "en cours" ne passe jamais à "terminé", la fonction a été interrompue
+    // (voir les journaux).
+    await db.doc("taches/backfillCommunesResultat").set(
+      {
+        etat: "en cours",
+        debutLot: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
     const snap = await db.collection("pois").get();
     const aTraiter = snap.docs.filter((d) => d.data().commune === undefined);
 
@@ -119,6 +132,12 @@ exports.backfillCommunesPois = onDocumentWritten(
     let arret = null;
 
     for (const doc of aTraiter.slice(0, limite)) {
+      // Budget de temps : on s'arrête proprement avant les 540 s, pour que le
+      // bilan soit toujours écrit (sinon la fonction est tuée sans bilan).
+      if (Date.now() - debut > 480000) {
+        arret = "Temps limite du lot atteint (480 s) : relancer pour la suite";
+        break;
+      }
       const { lat, lng } = doc.data();
       if (typeof lat !== "number" || typeof lng !== "number") {
         echecs++;
@@ -145,6 +164,7 @@ exports.backfillCommunesPois = onDocumentWritten(
     }
 
     await db.doc("taches/backfillCommunesResultat").set({
+      etat: "terminé",
       traites,
       echecs,
       restants: aTraiter.length - traites,

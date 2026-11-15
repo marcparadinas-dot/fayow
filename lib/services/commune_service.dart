@@ -6,6 +6,23 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/poi_models.dart';
 import 'settings_service.dart';
 
+/// Lieu administratif d'une position, tel que renvoyé par Nominatim reverse.
+/// Mêmes champs, normalisés de la même façon, que ceux enregistrés sur les POIs
+/// par la Cloud Function `enrichirCommunePoi` (voir functions/communes.js).
+class _Lieu {
+  final String commune;
+  final String departement;
+  final String region;
+  final String pays;
+
+  const _Lieu({
+    required this.commune,
+    required this.departement,
+    required this.region,
+    required this.pays,
+  });
+}
+
 class CommuneService {
   // -------------------------------------------------------------------------
   // État
@@ -80,6 +97,8 @@ Future<void> verifierCommune({
   }
   // --- Économie de réseau et de batterie ---------------------------------
   // 1. Toujours dans la commune déjà identifiée : aucune requête.
+  //    (Le polygone ne sert plus qu'à cela : le comptage des anecdotes se
+  //    fait désormais sur les champs enregistrés des POIs.)
   final polygoneConnu = _polygoneActuel;
   if (_communeActuelle != null &&
       polygoneConnu != null &&
@@ -106,8 +125,9 @@ Future<void> verifierCommune({
   _derniereVerifReseau = maintenant;
 
     try {
-      final commune = await _obtenirNomCommune(latitude, longitude);
-      if (commune == null) return;
+      final lieu = await _obtenirLieu(latitude, longitude);
+      if (lieu == null) return;
+      final commune = lieu.commune;
       _dernierePositionVerifiee = [latitude, longitude]; // vérification réussie
 
       // Annonce uniquement si la commune a changé
@@ -116,22 +136,23 @@ Future<void> verifierCommune({
       _polygoneActuel = null; // l'ancien polygone n'est plus valable
       _derniereAnnonce = DateTime.now();
 
-      // Récupérer le polygone via Nominatim
+      // Récupérer le polygone via Nominatim (économie de requêtes ensuite)
       final polygone = await _obtenirPolygoneCommune(commune, latitude, longitude);
 
       // Toujours mémoriser le polygone (même null) : celui de la commune
       // précédente ne doit pas court-circuiter les vérifications suivantes.
       _polygoneActuel = polygone;
 
-      if (polygone == null) {
-        await _annoncerCommune(commune, null, null);
-        return;
-      }
-
-      // Compter les POIs dans la commune
+      // Compter les POIs de la commune, EXACTEMENT comme l'écran
+      // « Communes FaYoW » : même commune, département, région et pays
+      // enregistrés sur le POI. Les deux écrans affichent ainsi toujours les
+      // mêmes nombres (pas d'écart pour un POI proche d'une limite).
       final poisDansCommune = pointsInteret.where((poi) {
         if (poi.status != PoiStatus.validated) return false;
-        return _estDansPolygone(poi.position.latitude, poi.position.longitude, polygone);
+        return (poi.commune ?? '').trim() == lieu.commune &&
+            (poi.departement ?? '').trim() == lieu.departement &&
+            (poi.region ?? '').trim() == lieu.region &&
+            (poi.pays ?? '').trim() == lieu.pays;
       }).toList();
 
       final total = poisDansCommune.length;
@@ -144,14 +165,15 @@ Future<void> verifierCommune({
   }
 
   // -------------------------------------------------------------------------
-  // Geocoder — nom de la commune via Nominatim reverse
+  // Geocoder — lieu administratif via Nominatim reverse
   // -------------------------------------------------------------------------
 
-  Future<String?> _obtenirNomCommune(double latitude, double longitude) async {
+  Future<_Lieu?> _obtenirLieu(double latitude, double longitude) async {
     try {
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?lat=$latitude&lon=$longitude&format=json&accept-language=fr',
+        '?lat=$latitude&lon=$longitude&format=json&addressdetails=1'
+        '&accept-language=fr',
       );
       final response = await http.get(url, headers: {
         'User-Agent': 'FayowApp/1.0',
@@ -163,10 +185,24 @@ Future<void> verifierCommune({
       if (address == null) return null;
 
       // Priorité : city > town > village > municipality
-      return address['city'] as String? ??
-          address['town'] as String? ??
-          address['village'] as String? ??
-          address['municipality'] as String?;
+      // (même règle que la Cloud Function enrichirCommunePoi)
+      final commune = (address['city'] as String? ??
+              address['town'] as String? ??
+              address['village'] as String? ??
+              address['municipality'] as String? ??
+              '')
+          .trim();
+      if (commune.isEmpty) return null;
+
+      return _Lieu(
+        commune: commune,
+        departement: ((address['county'] as String?) ?? '').trim(),
+        region: ((address['state'] as String? ??
+                    address['region'] as String?) ??
+                '')
+            .trim(),
+        pays: ((address['country'] as String?) ?? '').trim(),
+      );
     } catch (e) {
       print('Erreur geocoder commune : $e');
       return null;
