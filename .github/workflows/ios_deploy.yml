@@ -118,17 +118,28 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          APP_STORE_APP_ID: "6791549669"
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APP_STORE_CONNECT_PRIVATE_KEY" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8
-          # Debug — trouver le fichier IPA
+
+          IPA_PATH="$RUNNER_TEMP/ipa/fayow.ipa"
+
           echo "=== Contenu de RUNNER_TEMP/ipa ==="
-          ls -la $RUNNER_TEMP/ipa/ 2>/dev/null || echo "Dossier ipa non trouvé"
-          echo "=== Recherche IPA ==="
-          find $RUNNER_TEMP -name "*.ipa" 2>/dev/null || echo "Aucun IPA trouvé"
-          # Upload
-          xcrun altool --upload-app \
+          ls -la "$RUNNER_TEMP/ipa/" 2>/dev/null || echo "Dossier ipa non trouvé"
+
+          # Lecture du Bundle ID, de la version et du build directement dans l'IPA
+          PLIST=$(unzip -p "$IPA_PATH" 'Payload/*.app/Info.plist' | plutil -convert xml1 -o - -)
+          BUNDLE_ID=$(echo "$PLIST" | plutil -extract CFBundleIdentifier raw -o - -)
+          VERSION=$(echo "$PLIST" | plutil -extract CFBundleShortVersionString raw -o - -)
+          BUILD=$(echo "$PLIST" | plutil -extract CFBundleVersion raw -o - -)
+          echo "Bundle ID : $BUNDLE_ID - version $VERSION ($BUILD)"
+
+          xcrun altool --upload-package "$IPA_PATH" \
             --type ios \
-            --file $RUNNER_TEMP/ipa/fayow.ipa \
-            --apiKey $APP_STORE_CONNECT_KEY_ID \
-            --apiIssuer $APP_STORE_CONNECT_ISSUER_ID
+            --apple-id "$APP_STORE_APP_ID" \
+            --bundle-id "$BUNDLE_ID" \
+            --bundle-short-version-string "$VERSION" \
+            --bundle-version "$BUILD" \
+            --apiKey "$APP_STORE_CONNECT_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
