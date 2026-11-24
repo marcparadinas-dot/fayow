@@ -104,8 +104,8 @@ jobs:
           # Patcher App.framework avant l'export
           PLIST="$RUNNER_TEMP/Runner.xcarchive/Products/Applications/Runner.app/Frameworks/App.framework/Info.plist"
           if [ -f "$PLIST" ]; then
-            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 13.0" "$PLIST" 2>/dev/null || \
-            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 13.0" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 15.0" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Set :MinimumOSVersion 15.0" "$PLIST"
             echo "Patched MinimumOSVersion"
           fi
           xcodebuild -exportArchive \

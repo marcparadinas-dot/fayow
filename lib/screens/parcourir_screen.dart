@@ -37,6 +37,14 @@ const Color _couleurMienneLue = Color(0xFF1B5E20);
 const Color _couleurMienneNonLue = Color(0xFFC9A0DC);
 const Color _couleurMienneNonLueFonce = Color(0xFF9B6FB5);
 
+/// Rayon réel de la zone d'une anecdote (en mètres).
+const double _rayonCercleMetres = 20.0;
+
+/// Rayon minimal affiché à l'écran (en pixels) : quand le zoom est tel que
+/// 20 m représenteraient moins que cela, le cercle garde cette taille au lieu
+/// de devenir un minuscule point (comme sur l'interface de gestion).
+const double _rayonMinPixels = 9.0;
+
 class ParcourirScreen extends StatefulWidget {
   final LatLng positionInitiale;
   final List<PointInteret> pointsInteret;
@@ -69,6 +77,11 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   // Carte (et donc la FlutterMap) à chaque retour dessus.
   LatLng? _cibleLocalisation;
   static const double _zoomLocalisation = 18.0;
+
+  // Zoom courant de la carte (arrondi au quart de niveau) : sert à choisir,
+  // pour chaque cercle, entre rayon en mètres et rayon minimal en pixels.
+  // ValueNotifier : seule la couche des cercles est reconstruite.
+  final ValueNotifier<double> _zoomCarte = ValueNotifier<double>(16.0);
 
   // Position de l'utilisateur (mise à jour en continu) : sert au bouton de
   // recentrage, qui n'apparaît que si la carte s'en éloigne.
@@ -157,6 +170,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
     _positionSubscription?.cancel();
     _compassSubscription?.cancel();
     _cap.dispose();
+    _zoomCarte.dispose();
     _listeController.dispose();
     _tabController.dispose();
     super.dispose();
@@ -363,17 +377,50 @@ class _ParcourirScreenState extends State<ParcourirScreen>
       ];
 
   // -------------------------------------------------------------------------
+  // Taille des cercles selon le zoom
+  // -------------------------------------------------------------------------
+
+  /// Nombre de mètres représentés par un pixel à ce zoom et cette latitude
+  /// (projection Web Mercator, tuiles de 256 px).
+  double _metresParPixel(double zoom, double latitude) {
+    return 156543.03392 *
+        math.cos(latitude * math.pi / 180) /
+        math.pow(2, zoom);
+  }
+
+  /// Distance (en mètres) à partir de laquelle un tap est rattaché à un point.
+  /// 30 m en zoom rapproché ; plus large au dézoom, pour que les points
+  /// agrandis (rayon minimal en pixels) restent faciles à toucher.
+  double _seuilToucheMetres(LatLng pointTape) {
+    double zoom;
+    try {
+      zoom = _mapController.camera.zoom;
+    } catch (_) {
+      return 30.0;
+    }
+    final mpp = _metresParPixel(zoom, pointTape.latitude);
+    return math.max(30.0, _rayonMinPixels * 1.5 * mpp);
+  }
+
+  // -------------------------------------------------------------------------
   // Construction des cercles (carte)
   // -------------------------------------------------------------------------
 
-  List<CircleMarker> _buildCercles() {
+  List<CircleMarker> _buildCercles(double zoom) {
     final cercles = <CircleMarker>[];
     for (final poi in _poisVisibles) {
       final enDeplacement = _poiADeplacer?.id == poi.id;
+
+      // Au zoom rapproché, le cercle garde son rayon réel (20 m). Dès que
+      // 20 m représentent moins que _rayonMinPixels à l'écran, on passe en
+      // rayon fixe en pixels pour que le point reste bien visible.
+      final metresParPixel = _metresParPixel(zoom, poi.position.latitude);
+      final enMetres = _rayonCercleMetres / metresParPixel >= _rayonMinPixels;
+
       cercles.add(CircleMarker(
         point: poi.position,
-        radius: 20,
-        useRadiusInMeter: true,
+        radius: enMetres ? _rayonCercleMetres : _rayonMinPixels,
+        useRadiusInMeter: enMetres,
         color: enDeplacement
             ? Colors.orange.withOpacity(0.2)
             : _getCercleColor(poi),
@@ -395,7 +442,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
       return;
     }
 
-    const double seuilMetres = 30.0;
+    final double seuilMetres = _seuilToucheMetres(tapLatLng);
     PointInteret? poiTouche;
     double distanceMin = double.infinity;
 
@@ -415,7 +462,7 @@ class _ParcourirScreenState extends State<ParcourirScreen>
   // -------------------------------------------------------------------------
 
   void _onCarteLongPress(LatLng tapLatLng) {
-    const double seuilMetres = 30.0;
+    final double seuilMetres = _seuilToucheMetres(tapLatLng);
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
     PointInteret? poiCible;
@@ -1332,6 +1379,15 @@ Future<void> _afficherDialogRejetAvecMotif(PointInteret poi) async {
               if (cible != null) {
                 _mapController.move(cible, _zoomLocalisation);
               }
+              _zoomCarte.value =
+                  (_mapController.camera.zoom * 4).round() / 4;
+            },
+            // Zoom arrondi au quart de niveau : la couche des cercles n'est
+            // reconstruite que lorsque ce zoom arrondi change.
+            onPositionChanged: (position, hasGesture) {
+              final zoom = position.zoom;
+              if (zoom == null) return;
+              _zoomCarte.value = (zoom * 4).round() / 4;
             },
             onTap: (tapPosition, latLng) => _onCarteTappee(latLng),
             onLongPress: (tapPosition, latLng) => _onCarteLongPress(latLng),
@@ -1352,7 +1408,11 @@ ListenableBuilder(
               //subdomains: const ['a', 'b', 'c', 'd'],
               //userAgentPackageName: 'com.example.fayow',
             //),
-            CircleLayer(circles: _buildCercles()),
+            ValueListenableBuilder<double>(
+              valueListenable: _zoomCarte,
+              builder: (context, zoom, _) =>
+                  CircleLayer(circles: _buildCercles(zoom)),
+            ),
             MarkerLayer(
               markers: [
                 Marker(

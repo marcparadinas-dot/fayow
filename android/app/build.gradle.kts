@@ -52,19 +52,25 @@ android {
         }
     }
 
-buildTypes {
+    buildTypes {
         getByName("release") {
             // Signature de l'application
             signingConfig = signingConfigs.getByName("release")
-            
-            // On force tout à false pour éviter le conflit
-            isMinifyEnabled = false
-            isShrinkResources = false
-            
+
+            // R8 : obscurcissement, optimisation et réduction du code DEX
+            isMinifyEnabled = true
+            // Supprime les ressources inutilisées (nécessite isMinifyEnabled = true)
+            isShrinkResources = true
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
+            // Symboles natifs pour les rapports de crash dans la Play Console
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
 
         getByName("debug") {

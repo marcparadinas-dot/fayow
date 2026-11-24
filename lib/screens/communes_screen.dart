@@ -56,6 +56,9 @@ class _Cumul {
       );
 }
 
+/// Critère de tri du tableau (choisi en touchant l'en-tête des colonnes).
+enum _CritereTri { anecdotes, lues, alphabetique }
+
 class CommunesScreen extends StatefulWidget {
   final List<PointInteret> pointsInteret;
   final Set<String> poisLusIds;
@@ -83,6 +86,10 @@ class _CommunesScreenState extends State<CommunesScreen> {
 
   String? _paysFiltre;
   final Set<String> _regionsFiltre = {};
+
+  // Tri : par défaut, les lieux les plus riches en anecdotes d'abord.
+  _CritereTri _critereTri = _CritereTri.anecdotes;
+  bool _triDecroissant = true;
 
   // État de dépliage : les pays sont dépliés par défaut (on ne mémorise que
   // ceux que l'utilisateur a repliés), les régions sont repliées par défaut
@@ -153,6 +160,42 @@ class _CommunesScreenState extends State<CommunesScreen> {
   static int _comparer(String a, String b) =>
       _sansAccents(a).compareTo(_sansAccents(b));
 
+  /// Touche un critère de l'en-tête : s'il est déjà actif on inverse le sens,
+  /// sinon on l'active avec son sens naturel (décroissant pour les compteurs,
+  /// croissant pour l'ordre alphabétique).
+  void _changerTri(_CritereTri critere) {
+    setState(() {
+      if (_critereTri == critere) {
+        _triDecroissant = !_triDecroissant;
+      } else {
+        _critereTri = critere;
+        _triDecroissant = critere != _CritereTri.alphabetique;
+      }
+    });
+  }
+
+  /// Compare deux éléments (pays, régions ou communes) selon le critère de tri
+  /// courant. Un pays ou une région est représenté(e) par la liste de ses
+  /// communes, une commune par une liste d'un seul élément. En cas d'égalité,
+  /// l'ordre alphabétique croissant départage.
+  int _comparerAgregats(
+    String nomA,
+    List<CommuneFayow> a,
+    String nomB,
+    List<CommuneFayow> b,
+  ) {
+    if (_critereTri == _CritereTri.alphabetique) {
+      final r = _comparer(nomA, nomB);
+      return _triDecroissant ? -r : r;
+    }
+
+    final r = _critereTri == _CritereTri.anecdotes
+        ? _sommeAnecdotes(a).compareTo(_sommeAnecdotes(b))
+        : _sommeLues(a).compareTo(_sommeLues(b));
+    if (r != 0) return _triDecroissant ? -r : r;
+    return _comparer(nomA, nomB);
+  }
+
   // -------------------------------------------------------------------------
   // Utilitaires d'affichage
   // -------------------------------------------------------------------------
@@ -166,6 +209,16 @@ class _CommunesScreenState extends State<CommunesScreen> {
       l.fold<int>(0, (s, c) => s + c.nbLues);
 
   static String _cleRegion(String pays, String region) => '$pays|$region';
+
+  /// Texte d'une colonne de nombres : il se réduit au besoin pour tenir dans
+  /// la colonne, au lieu de déborder quand la police système est agrandie.
+  Widget _nombre(String texte, TextStyle style) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Text(texte, style: style),
+    );
+  }
 
   // -------------------------------------------------------------------------
   // Filtres
@@ -319,21 +372,78 @@ class _CommunesScreenState extends State<CommunesScreen> {
   // Éléments du tableau
   // -------------------------------------------------------------------------
 
+  /// Une cellule cliquable de l'en-tête : texte + flèche si c'est le critère
+  /// de tri actif. Le contenu se réduit si besoin pour ne jamais être tronqué
+  /// (police système agrandie).
+  Widget _celluleEntete({
+    required String libelle,
+    required _CritereTri critere,
+    required Alignment alignement,
+  }) {
+    final actif = _critereTri == critere;
+    final couleur = actif
+        ? Theme.of(context).colorScheme.primary
+        : Theme.of(context).colorScheme.onSurface;
+    return InkWell(
+      onTap: () => _changerTri(critere),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: alignement,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                libelle,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: couleur,
+                ),
+              ),
+              if (actif)
+                Icon(
+                  _triDecroissant ? Icons.arrow_downward : Icons.arrow_upward,
+                  size: 14,
+                  color: couleur,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _enteteColonnes() {
-    const style = TextStyle(fontSize: 12, fontWeight: FontWeight.bold);
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: const Row(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
         children: [
-          Expanded(child: Text('Pays, région, commune', style: style)),
+          Expanded(
+            child: _celluleEntete(
+              libelle: 'Pays › Région › Commune',
+              critere: _CritereTri.alphabetique,
+              alignement: Alignment.centerLeft,
+            ),
+          ),
           SizedBox(
             width: _largeurAnecdotes,
-            child: Text('Anecdotes', style: style, textAlign: TextAlign.right),
+            child: _celluleEntete(
+              libelle: 'Anecdotes',
+              critere: _CritereTri.anecdotes,
+              alignement: Alignment.centerRight,
+            ),
           ),
           SizedBox(
             width: _largeurLues,
-            child: Text('Lues', style: style, textAlign: TextAlign.right),
+            child: _celluleEntete(
+              libelle: 'Lues',
+              critere: _CritereTri.lues,
+              alignement: Alignment.centerRight,
+            ),
           ),
         ],
       ),
@@ -390,10 +500,9 @@ class _CommunesScreenState extends State<CommunesScreen> {
               ),
               SizedBox(
                 width: _largeurAnecdotes,
-                child: Text(
+                child: _nombre(
                   '$anecdotes',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
+                  TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: couleur,
@@ -402,10 +511,9 @@ class _CommunesScreenState extends State<CommunesScreen> {
               ),
               SizedBox(
                 width: _largeurLues,
-                child: Text(
+                child: _nombre(
                   '$lues',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
+                  TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                     color: toutLu ? Colors.green : couleur,
@@ -489,18 +597,16 @@ class _CommunesScreenState extends State<CommunesScreen> {
             ),
             SizedBox(
               width: _largeurAnecdotes,
-              child: Text(
+              child: _nombre(
                 '${c.nbAnecdotes}',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 15),
+                const TextStyle(fontSize: 15),
               ),
             ),
             SizedBox(
               width: _largeurLues,
-              child: Text(
+              child: _nombre(
                 '${c.nbLues}',
-                textAlign: TextAlign.right,
-                style: TextStyle(
+                TextStyle(
                   fontSize: 15,
                   fontWeight: toutLu ? FontWeight.bold : FontWeight.normal,
                   color: toutLu ? Colors.green : null,
@@ -544,23 +650,33 @@ class _CommunesScreenState extends State<CommunesScreen> {
           .add(c);
     }
 
+    List<CommuneFayow> toutesLesCommunes(String pays) =>
+        parPays[pays]!.values.expand((l) => l).toList();
+
     final lignes = <Widget>[];
-    final paysTries = parPays.keys.toList()..sort(_comparer);
+    final paysTries = parPays.keys.toList()
+      ..sort((a, b) => _comparerAgregats(
+            a,
+            toutesLesCommunes(a),
+            b,
+            toutesLesCommunes(b),
+          ));
     for (final pays in paysTries) {
       final regions = parPays[pays]!;
       final paysDeplie = !_paysReplies.contains(pays);
       lignes.add(_lignePays(
         pays: pays,
         nbRegions: regions.length,
-        communes: regions.values.expand((l) => l).toList(),
+        communes: toutesLesCommunes(pays),
         deplie: paysDeplie,
       ));
       if (!paysDeplie) continue;
 
-      final regionsTriees = regions.keys.toList()..sort(_comparer);
+      final regionsTriees = regions.keys.toList()
+        ..sort((a, b) => _comparerAgregats(a, regions[a]!, b, regions[b]!));
       for (final region in regionsTriees) {
         final liste = regions[region]!
-          ..sort((a, b) => _comparer(a.nom, b.nom));
+          ..sort((a, b) => _comparerAgregats(a.nom, [a], b.nom, [b]));
         final regionDeplie =
             _regionsDepliees.contains(_cleRegion(pays, region));
         lignes.add(_ligneRegion(

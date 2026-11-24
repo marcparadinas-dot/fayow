@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'parcourir_screen.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -33,6 +34,13 @@ import '../widgets/direction_marker.dart';
 import '../widgets/map_recenter_button.dart';
 import '../widgets/confirmation_soumission.dart';
 
+/// Rayon réel de la zone d'une anecdote (en mètres), pour l'affichage.
+const double _rayonCercleMetres = 20.0;
+
+/// Rayon minimal affiché à l'écran (en pixels) : quand le zoom est tel que
+/// 20 m représenteraient moins que cela, le cercle garde cette taille au lieu
+/// de devenir un minuscule point (comme sur l'interface de gestion).
+const double _rayonMinPixels = 9.0;
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -53,6 +61,12 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
   // est reconstruit quand le cap change, pas tout l'écran.
   final ValueNotifier<double> _currentHeading = ValueNotifier<double>(0.0);
   StreamSubscription<CompassEvent>? _compassSubscription;
+
+  // Zoom courant de la carte (arrondi au quart de niveau) : sert à choisir,
+  // pour chaque cercle, entre rayon en mètres et rayon minimal en pixels.
+  // ValueNotifier : seule la couche des cercles est reconstruite.
+  final ValueNotifier<double> _zoomCarte = ValueNotifier<double>(16.0);
+
   bool _locationReady = false;
   bool _modeReaffichage = false;
   bool _poisCharges = false;
@@ -180,6 +194,7 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver {
     _locationSubscription?.cancel();
     _compassSubscription?.cancel();
     _currentHeading.dispose();
+    _zoomCarte.dispose();
     _ttsService.dispose();
 
     // Arrêt du service — Android uniquement (no-op sur iOS et web)
@@ -821,22 +836,53 @@ void _onAjouterPoiClicked() {
     }
   }
 
-List<CircleMarker> _buildCercles() {
+/// Nombre de mètres représentés par un pixel à ce zoom et cette latitude
+/// (projection Web Mercator, tuiles de 256 px).
+double _metresParPixel(double zoom, double latitude) {
+  return 156543.03392 *
+      math.cos(latitude * math.pi / 180) /
+      math.pow(2, zoom);
+}
+
+/// Distance (en mètres) à partir de laquelle un tap est rattaché à un point.
+/// 30 m en zoom rapproché ; plus large au dézoom, pour que les points
+/// agrandis (rayon minimal en pixels) restent faciles à toucher.
+double _seuilToucheMetres(LatLng pointTape) {
+  double zoom;
+  try {
+    zoom = _mapController.camera.zoom;
+  } catch (_) {
+    return 30.0;
+  }
+  final mpp = _metresParPixel(zoom, pointTape.latitude);
+  return math.max(30.0, _rayonMinPixels * 1.5 * mpp);
+}
+
+List<CircleMarker> _buildCercles(double zoom) {
   return _pointsInteret
       .where((poi) => !_poisLusIds.contains(poi.id))
-      .map((poi) => CircleMarker(
-            point: poi.position,
-            radius: 20,
-            useRadiusInMeter: true,
-            color: _getCercleColor(poi),
-            borderColor: _getCercleBorderColor(poi),
-            borderStrokeWidth: 3,
-          ))
+      .map((poi) {
+        // Au zoom rapproché, le cercle garde son rayon réel (20 m). Dès que
+        // 20 m représentent moins que _rayonMinPixels à l'écran, on passe en
+        // rayon fixe en pixels pour que le point reste bien visible.
+        final metresParPixel = _metresParPixel(zoom, poi.position.latitude);
+        final enMetres =
+            _rayonCercleMetres / metresParPixel >= _rayonMinPixels;
+
+        return CircleMarker(
+          point: poi.position,
+          radius: enMetres ? _rayonCercleMetres : _rayonMinPixels,
+          useRadiusInMeter: enMetres,
+          color: _getCercleColor(poi),
+          borderColor: _getCercleBorderColor(poi),
+          borderStrokeWidth: 3,
+        );
+      })
       .toList();
 }
 
 void _onCarteTappee(LatLng tapLatLng) {
-  const double seuilMetres = 30.0;
+  final double seuilMetres = _seuilToucheMetres(tapLatLng);
 
   PointInteret? poiTouche;
   double distanceMin = double.infinity;
@@ -1575,6 +1621,18 @@ Stack(
                         options: MapOptions(
                           initialCenter: _currentPosition!,
                           initialZoom: 16.0,
+                          onMapReady: () {
+                            _zoomCarte.value =
+                                (_mapController.camera.zoom * 4).round() / 4;
+                          },
+                          // Zoom arrondi au quart de niveau : la couche des
+                          // cercles n'est reconstruite que lorsque ce zoom
+                          // arrondi change.
+                          onPositionChanged: (position, hasGesture) {
+                            final zoom = position.zoom;
+                            if (zoom == null) return;
+                            _zoomCarte.value = (zoom * 4).round() / 4;
+                          },
                           onTap: (tapPosition, latLng) =>
                               _onCarteTappee(latLng),
                         ),
@@ -1594,7 +1652,11 @@ ListenableBuilder(
                       //subdomains: const ['a', 'b', 'c', 'd'],
                       //userAgentPackageName: 'com.example.fayow',
                     //),
-                          CircleLayer(circles: _buildCercles()),
+                          ValueListenableBuilder<double>(
+                            valueListenable: _zoomCarte,
+                            builder: (context, zoom, _) =>
+                                CircleLayer(circles: _buildCercles(zoom)),
+                          ),
                           MarkerLayer(
                             markers: [
                               if (_currentPosition != null)
